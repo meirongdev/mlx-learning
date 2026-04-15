@@ -185,3 +185,33 @@ clean: clean-server
 
 bench:
 	$(UV) run mlx-bench
+
+# OpenAI-compatible proxy to MLX server
+PROXY_PORT ?= 5101
+PROXY_HOST ?= 127.0.0.1
+PROXY_PID ?= mlx-proxy.pid
+PROXY_LOG ?= mlx-proxy.log
+
+proxy-start:
+	@echo "Starting OpenAI-compat proxy on $(PROXY_HOST):$(PROXY_PORT)"
+	@if [ -f "$(PROXY_PID)" ] && kill -0 "$$(cat "$(PROXY_PID)")" 2>/dev/null; then \
+		echo "Proxy already running with PID $$(cat "$(PROXY_PID)")"; exit 0; \
+	fi
+	@nohup .venv/bin/python scripts/openai_proxy.py --host $(PROXY_HOST) --port $(PROXY_PORT) >"$(PROXY_LOG)" 2>&1 & \
+	pid=$$!; echo "$$pid" > "$(PROXY_PID)"; echo "Started proxy PID $$pid"
+
+proxy-stop:
+	@if [ -f "$(PROXY_PID)" ]; then \
+		pid=$$(cat "$(PROXY_PID)"); \
+		if kill -0 "$$pid" 2>/dev/null; then kill "$$pid"; echo "Stopped proxy PID $$pid"; fi; \
+		rm -f "$(PROXY_PID)"; \
+	else \
+		echo "No proxy PID file"; \
+	fi
+
+proxy-status:
+	@echo "Proxy PID file: $(PROXY_PID)"; if [ -f "$(PROXY_PID)" ]; then echo "PID: $$(cat $(PROXY_PID))"; fi; lsof -nP -iTCP:$(PROXY_PORT) -sTCP:LISTEN || true
+
+proxy-logs:
+	@tail -n 200 "$(PROXY_LOG)"
+
