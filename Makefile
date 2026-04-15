@@ -188,7 +188,7 @@ bench:
 
 # OpenAI-compatible proxy to MLX server
 PROXY_PORT ?= 5101
-PROXY_HOST ?= 127.0.0.1
+PROXY_HOST ?= 0.0.0.0
 PROXY_PID ?= mlx-proxy.pid
 PROXY_LOG ?= mlx-proxy.log
 
