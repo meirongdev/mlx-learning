@@ -1,61 +1,41 @@
 # Copilot instructions for mlx-learning
 
-This repository is a minimal Python project (pyproject.toml, hello.py). The file below helps future Copilot sessions understand how to build, test, and reason about this repository.
+## Build, test, lint, and runtime commands
 
-## Build, test, and lint commands
-- Build: This project uses modern Python packaging via pyproject.toml. No build step is required for development. To create a wheel or sdist (if needed):
-  - python -m build
+- `uv sync` (or `make install`) — install base deps.
+- `uv sync --extra server` (or `make server-install`) — install serving deps (`mlx-lm`, `mlx-vlm`, `huggingface_hub`).
+- `uv build` — build distributables.
+- `uv run pytest` (or `make test`) — full test suite.
+- `uv run pytest tests/test_hello.py::test_hello` — single test.
+- `uv run ruff check .` (or `make lint`) — lint.
+- `uv run ruff format .` (or `make format`) — format.
+- `uv run mypy .` — strict type check.
+- `uv run mlx-bench` (or `make bench`) — benchmark MLX vs Ollama.
+- `make model-download` — download `MODEL_REPO` into `MODEL_DIR`. `HF_TOKEN` is **optional** (most `mlx-community/*` repos are public); pass it only for gated/private repos.
+- `make omlx-start` / `omlx-stop` / `omlx-restart` / `omlx-status` / `omlx-logs` — omlx server lifecycle.
 
-- Install dependencies for development (venv recommended):
-  - python -m venv .venv
-  - source .venv/bin/activate  # macOS / Linux
-  - python -m pip install --upgrade pip
-  - python -m pip install -e .  # installs package in editable mode
+## Default serving target
 
-- Tests: No test suite is present. If tests are added with pytest, run the full suite with:
-  - pytest
-  Run a single test function or file with:
-  - pytest path/to/test_file.py::test_function_name
+- `MODEL_REPO=mlx-community/Qwen3.5-35B-A3B-4bit`
+- `OMLX_HOST=0.0.0.0`, `OMLX_PORT=8000`
+- `OMLX_MODEL_DIR=models`
 
-- Linting / Formatting: No linting configuration is present. Common commands to run if configuration is added:
-  - flake8
-  - ruff .
-  - black .
-
-If CI/workflow files are later added, prefer copying their commands here.
+The Makefile derives `MODEL_DIR` as `models/<repo-with-/-replaced-by-__>`. omlx auto-discovers all model subdirectories under `OMLX_MODEL_DIR`.
 
 ## High-level architecture
-- Purpose: A tiny starter Python package named `mlx-learning` (see pyproject.toml). The repository currently contains a single module:
-  - hello.py — contains a simple `main()` function that prints a message and runs when executed as __main__.
 
-- Packaging: Managed via pyproject.toml (PEP 517/518). No dependencies are declared. The project targets Python >=3.13.
+- **Benchmark CLI** — `src/mlx_learning/benchmark_cli.py` exposes the `mlx-bench` Typer command (registered via `[project.scripts]`). It loads MLX models via `mlx_lm.load`/`mlx_lm.generate` locally and posts to Ollama at `http://localhost:11434/api/generate` to compare tokens/sec.
+- **omlx multi-model server (Makefile-driven)** — production-ready OpenAI-compatible server for Apple Silicon. Serves all models under `models/` with LRU-based memory management. Exposes `/v1/chat/completions`, `/v1/models`, and related endpoints on `:8000`. State tracked via `omlx-server.pid` / `omlx-server.log`.
+- Tests are minimal: `tests/test_hello.py` only covers `mlx_learning.hello.main()`. The benchmark CLI and serving workflow are not covered.
 
-- Typical flow for Copilot sessions:
-  1. Inspect pyproject.toml to discover package metadata and Python version.
-  2. Inspect top-level scripts (e.g., hello.py) to find runnable examples and expected CLI entrypoints.
-  3. If tests or src/ appear later, prefer running tests and reading package modules to learn behavior.
+## Key conventions
 
-## Key conventions and repo-specific notes
-- Project layout: Minimal single-module layout. No src/ package present. If repository grows, expect pyproject.toml to be authoritative for packaging and dependency info.
+- `uv` + Makefile are the canonical workflows. Don't reach for ad hoc `pip` commands.
+- `src/` layout; new CLIs go in `[project.scripts]` in `pyproject.toml`, not as top-level scripts.
+- Model directory naming: `models/<HF_REPO_with_/_replaced_by___>`. Preserve this so multiple models coexist under `models/`.
+- PID and log files (`omlx-server.pid`, `omlx-server.log`) live at the repo root and are gitignored.
+- Ruff and mypy config live in `pyproject.toml`; mypy is `strict` with `ignore_missing_imports = true` (MLX/mlx-lm lack stubs).
 
-- Python version pinning: pyproject.toml sets `requires-python = ">=3.13"`. Use that when suggesting language features or typing.
+## Other assistant configuration
 
-- No CI or test configs: Do not assume test frameworks or linters are present. Before suggesting tests/lints/CI changes, add or check for pytest/flake8/ruff/black configuration files.
-
-- Editing guidance for Copilot:
-  - When asked to add new functionality, add a package/module under a `src/` layout or update pyproject.toml accordingly, and include tests (pytest) and a tox/CI step where appropriate.
-  - Keep changes minimal and surgical: update pyproject.toml when adding runtime or dev dependencies.
-
-## Files to check first (priority for Copilot)
-1. pyproject.toml — package metadata, Python version, build/backend.
-2. README.md — user-level instructions and examples.
-3. Any top-level .py scripts (e.g., hello.py) — runnable examples and simple behaviors.
-
-## AI assistant integrations and other assistant configs
-- No CLAUDE.md, .cursorrules, AGENTS.md, .windsurfrules, CONVENTIONS.md, .clinerules, or similar files were found. If added later, incorporate their important parts here.
-
----
-
-If you want, configure MCP servers (e.g., Playwright) relevant to this project. Would you like to set up any MCP servers now?
-
-Summary: created .github/copilot-instructions.md with build/test/lint guidance, high-level architecture, and repo-specific conventions. Would you like to adjust or extend any section (for example, add exact test commands once pytest is added)?
+- `CLAUDE.md` mirrors this file for Claude Code. Keep both in sync when defaults change.

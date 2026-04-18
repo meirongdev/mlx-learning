@@ -95,30 +95,77 @@ def test_ollama(model_name: str, prompt: str, max_tokens: int = 512, verbose: bo
         console.print("[bold red]Could not connect to Ollama. Is it running?[/bold red]")
         return None
 
+def test_omlx(base_url: str, model_name: str, prompt: str, max_tokens: int = 512, verbose: bool = False):
+    console.print(f"\n[bold green]--- Testing omlx: {model_name} @ {base_url} ---[/bold green]")
+    url = f"{base_url.rstrip('/')}/v1/chat/completions"
+    payload = {
+        "model": model_name,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+        "max_tokens": max_tokens
+    }
+
+    try:
+        start_time = time.perf_counter()
+        response = requests.post(url, json=payload)
+        end_time = time.perf_counter()
+
+        if response.status_code == 200:
+            data = response.json()
+            usage = data.get("usage", {})
+            tokens = usage.get("completion_tokens", 0)
+            
+            duration = end_time - start_time
+            tps = tokens / duration if duration > 0 else 0
+
+            console.print(f"[cyan]Generated Tokens:[/cyan] {tokens}")
+            console.print(f"[cyan]Duration:[/cyan] {duration:.2f}s")
+            console.print(f"[bold magenta]Tokens/sec (wall clock):[/bold magenta] {tps:.2f}")
+
+            if verbose:
+                content = data["choices"][0]["message"]["content"]
+                console.print(f"[dim]{content[:100]}...[/dim]")
+
+            return tps
+        else:
+            console.print(f"[bold red]omlx error: {response.status_code} - {response.text}[/bold red]")
+            return None
+    except requests.exceptions.ConnectionError:
+        console.print(f"[bold red]Could not connect to omlx at {base_url}. Is it running?[/bold red]")
+        return None
+
 @app.command()
 def benchmark(
     ollama_model: str = typer.Option("qwen3.5:latest", help="Ollama model name"),
     mlx_model: str = typer.Option("mlx-community/Qwen3.5-9B-MLX-4bit", help="MLX model path/repo"),
+    omlx_model: str = typer.Option(None, help="omlx model name (e.g. mlx-community__Qwen3.5-35B-A3B-4bit)"),
+    omlx_url: str = typer.Option("http://127.0.0.1:8000", help="omlx base URL"),
     prompt: str = typer.Option("Write a 200-word introduction to quantum computing for a 10-year-old.", help="Prompt to use"),
     max_tokens: int = typer.Option(512, help="Max tokens to generate"),
     verbose: bool = typer.Option(False, help="Show verbose output"),
     compare: bool = typer.Option(True, help="Run comparison"),
 ):
     """
-    Benchmark MLX vs Ollama performance.
+    Benchmark MLX vs Ollama vs omlx performance.
     """
-    console.rule("[bold]MLX vs Ollama Benchmark[/bold]")
+    console.rule("[bold]MLX vs Ollama vs omlx Benchmark[/bold]")
 
     results = {}
 
     # Test Ollama
-    if compare or not mlx_model:
+    if compare and ollama_model:
         tps = test_ollama(ollama_model, prompt, max_tokens, verbose)
         if tps:
             results["Ollama"] = tps
 
+    # Test omlx
+    if omlx_model:
+        tps = test_omlx(omlx_url, omlx_model, prompt, max_tokens, verbose)
+        if tps:
+            results["omlx"] = tps
+
     # Test MLX
-    if compare or not ollama_model:
+    if compare and mlx_model:
         tps = test_mlx(mlx_model, prompt, max_tokens, verbose)
         if tps:
             results["MLX"] = tps
@@ -133,11 +180,14 @@ def benchmark(
 
         base_tps = min(results.values())
 
-        for engine, tps in results.items():
+        for engine, tps in sorted(results.items(), key=lambda x: x[1], reverse=True):
             speedup = tps / base_tps
             table.add_row(engine, f"{tps:.2f}", f"{speedup:.2f}x")
 
         console.print(table)
+    elif len(results) == 1:
+        engine, tps = list(results.items())[0]
+        console.print(f"\n[bold cyan]{engine}[/bold cyan] [bold magenta]{tps:.2f}[/bold magenta] tokens/sec")
 
 if __name__ == "__main__":
     app()

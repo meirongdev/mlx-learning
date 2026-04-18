@@ -15,9 +15,16 @@ license = { file = "LICENSE" }
 dependencies = [
     "mlx>=0.23.0",
     "mlx-lm>=0.23.0",
+    "openai>=2.32.0",
     "requests>=2.32.5",
     "rich>=14.3.3",
     "typer>=0.18.0",
+]
+
+[project.optional-dependencies]
+server = [
+    "huggingface-hub>=1.10.2",
+    "mlx-vlm>=0.4.4",
 ]
 
 [project.scripts]

@@ -1,86 +1,116 @@
 # MLX Learning & Benchmark
 
-This repository contains tools and scripts for learning and benchmarking [MLX](https://github.com/ml-explore/mlx) on Apple Silicon, specifically comparing it against [Ollama](https://ollama.com).
+Tools and scripts for running and benchmarking [MLX](https://github.com/ml-explore/mlx) models on Apple Silicon, served via [omlx](https://github.com/omlx/omlx) — a production-ready OpenAI-compatible server for Apple Silicon.
+
+The default model is **`mlx-community/Qwen3.5-35B-A3B-4bit`** (MoE, 35B total / 3B active params, 4-bit quantized — runs on a 32 GB Apple Silicon Mac).
 
 ## Prerequisites
 
-- **Python 3.11+**
-- **[uv](https://github.com/astral-sh/uv)** (Recommended for fast dependency management)
-- **Ollama** (for comparison benchmarks)
+- Python 3.11+
+- [`uv`](https://github.com/astral-sh/uv)
+- [`omlx`](https://github.com/omlx/omlx) (`brew install omlx` or see its docs)
+- Optional: [Ollama](https://ollama.com) for the comparison benchmark
+- Optional: a Hugging Face token (`HF_TOKEN`) — only needed for gated/private repos. The default Qwen model is public.
 
 ## Installation
 
-1.  **Clone the repository:**
-    ```bash
-    git clone <repository-url>
-    cd mlx-learning
-    ```
+```bash
+git clone <repository-url>
+cd mlx-learning
+uv sync
+```
 
-2.  **Install dependencies using `uv`:**
-    ```bash
-    uv sync
-    ```
-    This will create a virtual environment and install all required packages.
+## Serving models with omlx
 
-## Usage
+omlx auto-discovers models from subdirectories of `models/`. Download a model first, then start the server:
 
-### Running the Benchmark
+```bash
+# Install the optional serving deps (mlx-lm, mlx-vlm, huggingface_hub)
+make server-install
 
-We provide a CLI tool `mlx-bench` to compare generation speed between MLX and Ollama.
+# Download the default model (~19 GB) into models/
+make model-download
 
-To run the default benchmark (comparing Qwen 3.5 9B):
+# Start the omlx server (listens on 0.0.0.0:8000)
+make omlx-start
+
+# Inspect / tail / stop
+make omlx-status
+make omlx-logs
+make omlx-stop
+```
+
+The model lands in `models/mlx-community__Qwen3.5-35B-A3B-4bit/` (slashes replaced with `__`), so multiple models can coexist and omlx serves them all.
+
+### Switching to another model
+
+Download any additional model into `models/` — omlx picks it up automatically:
+
+```bash
+make model-download MODEL_REPO=mlx-community/Qwen3-30B-A3B-4bit
+```
+
+### Smoke test
+
+```bash
+curl -s http://localhost:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model": "mlx-community__Qwen3.5-35B-A3B-4bit",
+       "messages": [{"role": "user", "content": "Hi"}],
+       "max_tokens": 32}' | jq .
+```
+
+Streaming:
+
+```bash
+curl -s http://localhost:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model": "mlx-community__Qwen3.5-35B-A3B-4bit",
+       "messages": [{"role": "user", "content": "Hi"}],
+       "stream": true}' 
+```
+
+## Benchmark CLI (`mlx-bench`)
+
+Compares generation speed of MLX vs Ollama side by side.
 
 ```bash
 uv run mlx-bench
+uv run mlx-bench --prompt "Explain black holes" --max-tokens 256 --verbose
 ```
 
-**Options:**
+Options: `--ollama-model`, `--mlx-model`, `--prompt`, `--max-tokens`, `--verbose`.
 
-- `--ollama-model`: Specify the Ollama model tag (default: `qwen3.5:latest`)
-- `--mlx-model`: Specify the MLX model path or HuggingFace repo (default: `mlx-community/Qwen3.5-9B-MLX-4bit`)
-- `--prompt`: Custom prompt text
-- `--max-tokens`: Maximum tokens to generate
-- `--verbose`: Show generated text and detailed logs
+### Reference numbers (M2 MacBook Pro, 32 GB)
 
-Example:
+Qwen 3.5 9B, 4-bit quantization:
+
+| Engine | Model               | Tokens/sec | Relative |
+| :----- | :------------------ | ---------: | -------: |
+| Ollama | qwen3.5:latest (9B) |      18.58 |    1.00x |
+| MLX    | Qwen3.5-9B-MLX-4bit |      28.35 |    1.53x |
+
+Reproduce: `uv run mlx-bench --max-tokens 128`
+
+## Development
+
 ```bash
-uv run mlx-bench --prompt "Explain black holes" --max-tokens 256
+uv run pytest                  # tests
+uv run pytest tests/test_hello.py::test_hello   # single test
+uv run ruff check .            # lint
+uv run ruff format .           # format
+uv run mypy .                  # type check (strict)
 ```
 
-### Development
+## Layout
 
-**Linting & Formatting:**
-```bash
-uv run ruff check .
-uv run ruff format .
-```
+- `src/mlx_learning/` — Python package; `benchmark_cli.py` exposes the `mlx-bench` Typer CLI
+- `scripts/verify_model.py` — local `config.json` inspector
+- `Makefile` — install, download, omlx server lifecycle
+- `models/` — downloaded model snapshots (gitignored)
 
-**Type Checking:**
-```bash
-uv run mypy .
-```
+## Process / log files
 
-**Running Tests:**
-```bash
-uv run pytest
-```
+The Makefile tracks the running daemon via PID + log files in the repo root (all gitignored):
 
-## Benchmark Results (M2 MBP 32GB)
-
-We tested the generation performance of MLX vs Ollama using Qwen 3.5 9B (4-bit quantization).
-
-| Engine | Model | Tokens/sec | Relative Speed |
-| :--- | :--- | :--- | :--- |
-| Ollama | qwen3.5:latest (9B) | 18.58 | 1.00x |
-| MLX | Qwen3.5-9B-MLX-4bit | 28.35 | 1.53x |
-
-**Run it yourself:**
-```bash
-uv run mlx-bench --max-tokens 128
-```
-
-## Directory Structure
-
-- `src/mlx_learning/`: Source code package
-- `tests/`: Unit and integration tests
-- `pyproject.toml`: Project configuration and dependencies
+- `omlx-server.pid`, `omlx-server.log` — the omlx model server

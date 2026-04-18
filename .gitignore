@@ -60,3 +60,12 @@ dmypy.json
 
 # MLX
 mlx_model/
+models/
+models_cache/
+mlx-server.log
+mlx-server.pid
+mlx-vlm-server.log
+mlx-proxy.pid
+mlx-proxy.log
+omlx-server.pid
+omlx-server.log
