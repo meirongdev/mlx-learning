@@ -5,7 +5,7 @@ UV ?= uv
 PYTHON ?= .venv/bin/python
 HF_TOKEN ?=
 HF_HUB_CACHE ?= $(HOME)/.cache/huggingface/hub
-MODEL_REPO ?= mlx-community/Qwen3.5-35B-A3B-4bit
+MODEL_REPO ?= mlx-community/Qwen3.6-35B-A3B-nvfp4
 MODEL_SLUG ?= $(subst /,__,$(MODEL_REPO))
 MODEL_DIR ?= models/$(MODEL_SLUG)
 # mlx_lm.server for text-only LLMs (Qwen, Llama, ...); mlx_vlm.server for VLMs (Gemma 4, ...)
@@ -19,14 +19,15 @@ STARTUP_POLL_INTERVAL ?= 5
 STOP_TIMEOUT ?= 30
 EXTRA_SERVER_ARGS ?=
 
-.PHONY: help install server-install model-download server-bootstrap server-start server-stop \
+.PHONY: help quickstart install server-install model-download server-bootstrap server-start server-stop \
 	server-restart server-status server-logs test lint format clean clean-server bench \
 	proxy-start proxy-stop proxy-restart proxy-status proxy-logs verify \
-	omlx-start omlx-stop omlx-status omlx-logs
+	omlx-install omlx-start omlx-stop omlx-status omlx-logs
 
 help:
 	@printf '%s\n' \
 		'Available targets:' \
+		'  make quickstart                      - One-click: install deps, download MODEL_REPO, start omlx, health-check' \
 		'  make install                         - Install base project dependencies' \
 		'  make server-install                  - Install server dependencies (mlx-lm/mlx-vlm + huggingface_hub)' \
 		'  make model-download                  - Download MODEL_REPO into MODEL_DIR (HF_TOKEN optional for public repos)' \
@@ -49,10 +50,17 @@ help:
 		'  PROXY_PORT=$(PROXY_PORT)' \
 		'' \
 		'Examples:' \
+		'  make quickstart                                          # fresh Mac -> running omlx in one command' \
 		'  make server-bootstrap                                    # uses defaults above' \
 		'  make server-start MODEL_REPO=mlx-community/Qwen3-30B-A3B-4bit' \
 		'  make server-start MODEL_REPO=mlx-community/gemma-4-26b-a4b-it-4bit SERVER_MODULE=mlx_vlm.server' \
 		'  make proxy-start                                         # OpenAI-compat shim on :$(PROXY_PORT)'
+
+quickstart:
+	@MODEL_REPO="$(MODEL_REPO)" MODEL_DIR="$(MODEL_DIR)" \
+		HOST="$(HOST)" PORT="$(PORT)" \
+		HF_TOKEN="$(HF_TOKEN)" \
+		bash scripts/bootstrap.sh
 
 install:
 	$(UV) sync
@@ -236,6 +244,22 @@ OMLX_MODEL_DIR ?= models
 OMLX_PID ?= omlx-server.pid
 OMLX_LOG ?= omlx-server.log
 OMLX_EXTRA_ARGS ?= --max-process-memory 90%
+
+omlx-install:
+	@echo "Checking omlx installation..."
+	@if ! command -v omlx >/dev/null 2>&1; then \
+		echo "omlx not found on PATH."; \
+		echo "Install via Homebrew:"; \
+		echo "  brew tap jundot/omlx https://github.com/jundot/omlx"; \
+		echo "  brew install omlx"; \
+		echo "  brew services start omlx"; \
+		echo ""; \
+		echo "Or from source (requires Python 3.10+, macOS 15+):"; \
+		echo "  git clone https://github.com/jundot/omlx.git && cd omlx"; \
+		echo "  pip install -e ."; \
+		exit 1; \
+	fi
+	@echo "omlx $(shell omlx --version 2>/dev/null || echo 'installed') found on PATH"
 
 omlx-start:
 	@if [ -f "$(OMLX_PID)" ] && kill -0 "$$(cat "$(OMLX_PID)")" 2>/dev/null; then \

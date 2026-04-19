@@ -5,9 +5,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
+# One-click on a fresh Apple Silicon Mac (idempotent, driven by scripts/bootstrap.sh)
+make quickstart                  # platform check -> uv (auto-install) -> deps -> model -> omlx serve -> /v1/models probe
+
 # Install
 uv sync                          # base deps
 uv sync --extra server           # + mlx-lm, mlx-vlm, huggingface_hub  (or: make server-install)
+
+# omlx (Homebrew tap)
+brew tap jundot/omlx https://github.com/jundot/omlx
+brew install omlx                # install omlx
+brew update && brew upgrade omlx # upgrade to latest
+brew services start omlx         # run as background service (auto-restarts)
+/opt/homebrew/opt/omlx/libexec/bin/pip install mcp  # optional MCP support
 
 # Test / lint / types
 uv run pytest

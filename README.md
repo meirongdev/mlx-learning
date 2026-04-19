@@ -1,18 +1,47 @@
 # MLX Learning & Benchmark
 
-Tools and scripts for running and benchmarking [MLX](https://github.com/ml-explore/mlx) models on Apple Silicon, served via [omlx](https://github.com/omlx/omlx) — a production-ready OpenAI-compatible server for Apple Silicon.
+Tools and scripts for running and benchmarking [MLX](https://github.com/ml-explore/mlx) models on Apple Silicon. Models are served by [`mlx_lm.server`](https://github.com/ml-explore/mlx-lm) — a production-ready OpenAI-compatible server included with mlx-lm.
 
-The default model is **`mlx-community/Qwen3.5-35B-A3B-4bit`** (MoE, 35B total / 3B active params, 4-bit quantized — runs on a 32 GB Apple Silicon Mac).
+The default model is **`mlx-community/Qwen3.6-35B-A3B-nvfp4`** (MoE, 35B total / 3B active params, NVFP4 quantized, 256k context — runs on a 32 GB Apple Silicon Mac).
+
+## Quickstart (one command)
+
+On a fresh Apple Silicon Mac:
+
+```bash
+git clone <repository-url>
+cd mlx-learning
+make quickstart
+```
+
+`make quickstart` runs `scripts/bootstrap.sh`, which is idempotent and re-runnable:
+
+1. Verifies macOS + Apple Silicon
+2. Installs `uv` via the official installer if missing
+3. `uv sync --extra server` (mlx-lm, mlx-vlm, huggingface_hub)
+4. Downloads `MODEL_REPO` into `models/` (skipped if already complete)
+5. Starts `mlx_lm.server` on `0.0.0.0:5001`
+6. Health-checks `GET /v1/models`
+
+Override defaults inline:
+
+```bash
+make quickstart MODEL_REPO=mlx-community/Qwen3.6-35B-A3B-4bit PORT=8080
+```
+
+Set `SKIP_SERVER=1` to stop after the model download.
 
 ## Prerequisites
 
+- macOS on Apple Silicon (M1 / M2 / M3 / M4). MLX does not support Intel Macs.
 - Python 3.11+
-- [`uv`](https://github.com/astral-sh/uv)
-- [`omlx`](https://github.com/omlx/omlx) (`brew install omlx` or see its docs)
+- [`uv`](https://github.com/astral-sh/uv) — auto-installed by `make quickstart` if missing
 - Optional: [Ollama](https://ollama.com) for the comparison benchmark
 - Optional: a Hugging Face token (`HF_TOKEN`) — only needed for gated/private repos. The default Qwen model is public.
 
-## Installation
+## Manual installation
+
+If you prefer to run each step yourself instead of `make quickstart`:
 
 ```bash
 git clone <repository-url>
@@ -20,42 +49,43 @@ cd mlx-learning
 uv sync
 ```
 
-## Serving models with omlx
+## Serving models with mlx_lm.server
 
-omlx auto-discovers models from subdirectories of `models/`. Download a model first, then start the server:
+`mlx_lm.server` is bundled with mlx-lm (no additional install needed). Download a model first, then start the server:
 
 ```bash
 # Install the optional serving deps (mlx-lm, mlx-vlm, huggingface_hub)
 make server-install
 
-# Download the default model (~19 GB) into models/
+# Download the default model (~18 GB nvfp4) into models/
 make model-download
 
-# Start the omlx server (listens on 0.0.0.0:8000)
-make omlx-start
+# Start the server (listens on 0.0.0.0:5001)
+make server-start
 
 # Inspect / tail / stop
-make omlx-status
-make omlx-logs
-make omlx-stop
+make server-status
+make server-logs
+make server-stop
 ```
 
-The model lands in `models/mlx-community__Qwen3.5-35B-A3B-4bit/` (slashes replaced with `__`), so multiple models can coexist and omlx serves them all.
+The model lands in `models/mlx-community__Qwen3.6-35B-A3B-nvfp4/` (slashes replaced with `__`).
 
 ### Switching to another model
 
-Download any additional model into `models/` — omlx picks it up automatically:
+Stop the server and restart with a different model:
 
 ```bash
-make model-download MODEL_REPO=mlx-community/Qwen3-30B-A3B-4bit
+make server-stop
+make server-bootstrap MODEL_REPO=mlx-community/Qwen3-30B-A3B-4bit
 ```
 
 ### Smoke test
 
 ```bash
-curl -s http://localhost:8000/v1/chat/completions \
+curl -s http://localhost:5001/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -d '{"model": "mlx-community__Qwen3.5-35B-A3B-4bit",
+  -d '{"model": "models/mlx-community__Qwen3.6-35B-A3B-nvfp4",
        "messages": [{"role": "user", "content": "Hi"}],
        "max_tokens": 32}' | jq .
 ```
@@ -63,11 +93,11 @@ curl -s http://localhost:8000/v1/chat/completions \
 Streaming:
 
 ```bash
-curl -s http://localhost:8000/v1/chat/completions \
+curl -s http://localhost:5001/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -d '{"model": "mlx-community__Qwen3.5-35B-A3B-4bit",
+  -d '{"model": "models/mlx-community__Qwen3.6-35B-A3B-nvfp4",
        "messages": [{"role": "user", "content": "Hi"}],
-       "stream": true}' 
+       "stream": true}'
 ```
 
 ## Benchmark CLI (`mlx-bench`)
@@ -105,6 +135,7 @@ uv run mypy .                  # type check (strict)
 ## Layout
 
 - `src/mlx_learning/` — Python package; `benchmark_cli.py` exposes the `mlx-bench` Typer CLI
+- `scripts/bootstrap.sh` — idempotent one-click setup (driven by `make quickstart`)
 - `scripts/verify_model.py` — local `config.json` inspector
 - `Makefile` — install, download, omlx server lifecycle
 - `models/` — downloaded model snapshots (gitignored)
@@ -114,3 +145,27 @@ uv run mypy .                  # type check (strict)
 The Makefile tracks the running daemon via PID + log files in the repo root (all gitignored):
 
 - `omlx-server.pid`, `omlx-server.log` — the omlx model server
+
+## Serving with omlx (multi-model server)
+
+[omlx](https://github.com/jundot/omlx) is a multi-model OpenAI-compatible server that auto-discovers all models under `models/`.
+
+### Install
+
+```bash
+brew tap jundot/omlx https://github.com/jundot/omlx
+brew install omlx
+# Upgrade: brew update && brew upgrade omlx
+# Run as background service: brew services start omlx
+```
+
+### Usage
+
+```bash
+make omlx-start                  # start on 0.0.0.0:8000
+make omlx-status                 # check PID, port, model info
+make omlx-logs                   # tail the log
+make omlx-stop                   # stop the server
+```
+
+Endpoint: `http://127.0.0.1:8000/v1`

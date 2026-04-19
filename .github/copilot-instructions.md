@@ -2,6 +2,7 @@
 
 ## Build, test, lint, and runtime commands
 
+- `make quickstart` — one-click setup on a fresh Apple Silicon Mac: verifies platform, installs `uv` if missing, `uv sync --extra server`, downloads `MODEL_REPO`, starts `mlx_lm.server`, health-checks `/v1/models`. Idempotent — re-run freely. See `scripts/bootstrap.sh`.
 - `uv sync` (or `make install`) — install base deps.
 - `uv sync --extra server` (or `make server-install`) — install serving deps (`mlx-lm`, `mlx-vlm`, `huggingface_hub`).
 - `uv build` — build distributables.
@@ -12,11 +13,22 @@
 - `uv run mypy .` — strict type check.
 - `uv run mlx-bench` (or `make bench`) — benchmark MLX vs Ollama.
 - `make model-download` — download `MODEL_REPO` into `MODEL_DIR`. `HF_TOKEN` is **optional** (most `mlx-community/*` repos are public); pass it only for gated/private repos.
+- `make omlx-install` — check/install omlx (Homebrew tap `jundot/omlx`).
 - `make omlx-start` / `omlx-stop` / `omlx-restart` / `omlx-status` / `omlx-logs` — omlx server lifecycle.
+
+### omlx (Homebrew tap)
+
+```bash
+brew tap jundot/omlx https://github.com/jundot/omlx
+brew install omlx                  # install
+brew update && brew upgrade omlx   # upgrade to latest
+brew services start omlx           # run as background service
+/opt/homebrew/opt/omlx/libexec/bin/pip install mcp  # optional MCP support
+```
 
 ## Default serving target
 
-- `MODEL_REPO=mlx-community/Qwen3.5-35B-A3B-4bit`
+- `MODEL_REPO=mlx-community/Qwen3.6-35B-A3B-nvfp4` (MoE, 35B total / 3B active, NVFP4 quantized, 256k context)
 - `OMLX_HOST=0.0.0.0`, `OMLX_PORT=8000`
 - `OMLX_MODEL_DIR=models`
 

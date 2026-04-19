@@ -6,7 +6,7 @@ A toolkit for benchmarking and serving MLX-based LLMs on Apple Silicon, served v
 
 **Stack:** Python 3.11+ — `mlx`, `mlx-lm`, `mlx-vlm`, `typer`, `rich`, `openai` — served via `omlx` (installed via brew).
 
-**Default model:** `mlx-community/Qwen3.5-35B-A3B-4bit` (MoE, 35B total / 3B active params, 4-bit quantized — fits on 32 GB Mac).
+**Default model:** `mlx-community/Qwen3.6-35B-A3B-nvfp4` (MoE, 35B total / 3B active params, NVFP4 quantized, 256k context — fits on 32 GB Mac).
 
 ## Architecture
 
@@ -20,9 +20,26 @@ Two independent layers:
 
 ### Prerequisites
 
-- `uv` (for Python environment management)
-- `omlx` (via `brew install omlx`)
+- macOS on Apple Silicon (M1/M2/M3/M4) — MLX does not support Intel Macs
+- `uv` (for Python environment management) — auto-installed by `make quickstart`
+- `omlx` — install via Homebrew tap:
+  ```bash
+  brew tap jundot/omlx https://github.com/jundot/omlx
+  brew install omlx
+  # Upgrade: brew update && brew upgrade omlx
+  # Run as service: brew services start omlx
+  # Optional MCP support: /opt/homebrew/opt/omlx/libexec/bin/pip install mcp
+  ```
 - `HF_TOKEN` env var (optional — the default Qwen model is public)
+
+### Quickstart (one command)
+
+```bash
+make quickstart                  # scripts/bootstrap.sh: platform check -> uv -> deps -> model -> omlx -> health check
+make quickstart MODEL_REPO=mlx-community/Qwen3.6-35B-A3B-4bit   # override defaults
+```
+
+Idempotent — safe to re-run. `SKIP_SERVER=1` halts after the model download.
 
 ### Development commands
 
@@ -64,7 +81,7 @@ make proxy-stop
 
 - **uv + Makefile** are the canonical workflows. Do not introduce ad hoc `pip` flows.
 - **src/ layout** — new CLIs go in `[project.scripts]` via `pyproject.toml`, not as top-level scripts.
-- **Model naming** — `models/<repo-with-/-replaced-by-__>` (e.g., `models/mlx-community__Qwen3.5-35B-A3B-4bit/`). Preserves multi-model coexistence.
+- **Model naming** — `models/<repo-with-/-replaced-by-__>` (e.g., `models/mlx-community__Qwen3.6-35B-A3B-nvfp4/`). Preserves multi-model coexistence.
 - **mypy strict** with `ignore_missing_imports = true` (MLX/mlx-lm lack type stubs).
 - **Tests are minimal** — only `tests/test_hello.py` covers `mlx_learning.hello.main()`.
 - **PID/log files** (`omlx-server.pid`, `omlx-server.log`) live at repo root and are gitignored.
@@ -74,7 +91,8 @@ make proxy-stop
 | File | Purpose |
 |------|---------|
 | `pyproject.toml` | Project metadata, deps, entry points, tool configs (ruff, mypy, pytest) |
-| `Makefile` | Full lifecycle: install, download, server, proxy, omlx, bench |
+| `Makefile` | Full lifecycle: quickstart, install, download, server, proxy, omlx, bench |
+| `scripts/bootstrap.sh` | Idempotent one-click setup driven by `make quickstart` |
 | `src/mlx_learning/benchmark_cli.py` | `mlx-bench` Typer CLI with `test_mlx`, `test_ollama`, `test_omlx`, `benchmark` |
 | `scripts/openai_proxy.py` | OpenAI-compatible proxy forwarding to a local MLX server |
 | `scripts/verify_model.py` | Local `config.json` inspector for downloaded models |
