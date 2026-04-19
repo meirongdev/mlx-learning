@@ -243,7 +243,7 @@ OMLX_PORT ?= 8000
 OMLX_MODEL_DIR ?= models
 OMLX_PID ?= omlx-server.pid
 OMLX_LOG ?= omlx-server.log
-OMLX_EXTRA_ARGS ?= --max-process-memory 90%
+OMLX_EXTRA_ARGS ?= --max-process-memory 90% --hot-cache-max-size 4GB --max-concurrent-requests 2 --initial-cache-blocks 1024
 
 omlx-install:
 	@echo "Checking omlx installation..."
