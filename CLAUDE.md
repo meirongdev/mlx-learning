@@ -17,7 +17,6 @@ brew tap jundot/omlx https://github.com/jundot/omlx
 brew install omlx                # install omlx
 brew update && brew upgrade omlx # upgrade to latest
 brew services start omlx         # run as background service (auto-restarts)
-/opt/homebrew/opt/omlx/libexec/bin/pip install mcp  # optional MCP support
 
 # Test / lint / types
 uv run pytest
@@ -26,7 +25,7 @@ uv run ruff check .
 uv run ruff format .
 uv run mypy .                                    # strict mode
 
-# Benchmark MLX vs Ollama
+# Benchmark MLX vs omlx
 uv run mlx-bench                                 # or: make bench
 
 # omlx multi-model server
@@ -63,7 +62,7 @@ make omlx-start | omlx-stop | omlx-status | omlx-logs
 Two independent layers:
 
 **1. Benchmark CLI** (`src/mlx_learning/benchmark_cli.py`)
-The `mlx-bench` Typer command (registered in `pyproject.toml` under `[project.scripts]`). Loads MLX models via `mlx_lm.load`/`mlx_lm.generate` locally and posts to Ollama at `http://localhost:11434/api/generate` to compare tokens/sec.
+The `mlx-bench` Typer command (registered in `pyproject.toml` under `[project.scripts]`). Loads MLX models via `mlx_lm.load`/`mlx_lm.generate` locally and posts to omlx at `http://127.0.0.1:8000/v1/chat/completions` to compare tokens/sec.
 
 **2. omlx multi-model server** (Makefile-driven)
 Production-ready OpenAI-compatible server for Apple Silicon. Serves all models found under `models/` with LRU-based memory management. Exposes `/v1/chat/completions`, `/v1/models`, and related endpoints on `:8000`. State tracked via `omlx-server.pid` / `omlx-server.log`.

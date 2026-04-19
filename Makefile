@@ -39,7 +39,7 @@ help:
 		'  make server-logs                     - Tail the server log' \
 		'  make proxy-start / -stop / -status / -logs   - Manage OpenAI-compatible proxy on PROXY_PORT' \
 		'  make omlx-start / -stop / -status / -logs   - Manage omlx multi-model server on OMLX_PORT' \
-		'  make bench                           - Run the mlx-bench CLI (MLX vs Ollama)' \
+		'  make bench                           - Run the mlx-bench CLI (MLX vs omlx)' \
 		'' \
 		'Configurable variables:' \
 		'  MODEL_REPO=$(MODEL_REPO)' \

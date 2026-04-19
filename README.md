@@ -36,7 +36,6 @@ Set `SKIP_SERVER=1` to stop after the model download.
 - macOS on Apple Silicon (M1 / M2 / M3 / M4). MLX does not support Intel Macs.
 - Python 3.11+
 - [`uv`](https://github.com/astral-sh/uv) — auto-installed by `make quickstart` if missing
-- Optional: [Ollama](https://ollama.com) for the comparison benchmark
 - Optional: a Hugging Face token (`HF_TOKEN`) — only needed for gated/private repos. The default Qwen model is public.
 
 ## Manual installation
@@ -102,14 +101,14 @@ curl -s http://localhost:5001/v1/chat/completions \
 
 ## Benchmark CLI (`mlx-bench`)
 
-Compares generation speed of MLX vs Ollama side by side.
+Compares generation speed of MLX vs omlx side by side.
 
 ```bash
 uv run mlx-bench
 uv run mlx-bench --prompt "Explain black holes" --max-tokens 256 --verbose
 ```
 
-Options: `--ollama-model`, `--mlx-model`, `--prompt`, `--max-tokens`, `--verbose`.
+Options: `--mlx-model`, `--omlx-model`, `--prompt`, `--max-tokens`, `--verbose`.
 
 ### Reference numbers (M2 MacBook Pro, 32 GB)
 
@@ -117,7 +116,6 @@ Qwen 3.5 9B, 4-bit quantization:
 
 | Engine | Model               | Tokens/sec | Relative |
 | :----- | :------------------ | ---------: | -------: |
-| Ollama | qwen3.5:latest (9B) |      18.58 |    1.00x |
 | MLX    | Qwen3.5-9B-MLX-4bit |      28.35 |    1.53x |
 
 Reproduce: `uv run mlx-bench --max-tokens 128`

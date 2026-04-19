@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "mlx-learning"
 version = "0.1.0"
-description = "A benchmark and learning tool for MLX and Ollama"
+description = "A benchmark and learning tool for MLX on Apple Silicon"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
@@ -53,6 +53,9 @@ select = [
     "UP",   # pyupgrade
 ]
 ignore = ["E501"] # Ignore long lines (handled by formatter)
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["typer.Argument", "typer.Option"]
 
 [tool.ruff.format]
 quote-style = "double"

@@ -11,7 +11,7 @@
 - `uv run ruff check .` (or `make lint`) — lint.
 - `uv run ruff format .` (or `make format`) — format.
 - `uv run mypy .` — strict type check.
-- `uv run mlx-bench` (or `make bench`) — benchmark MLX vs Ollama.
+- `uv run mlx-bench` (or `make bench`) — benchmark MLX vs omlx.
 - `make model-download` — download `MODEL_REPO` into `MODEL_DIR`. `HF_TOKEN` is **optional** (most `mlx-community/*` repos are public); pass it only for gated/private repos.
 - `make omlx-install` — check/install omlx (Homebrew tap `jundot/omlx`).
 - `make omlx-start` / `omlx-stop` / `omlx-restart` / `omlx-status` / `omlx-logs` — omlx server lifecycle.
@@ -23,7 +23,6 @@ brew tap jundot/omlx https://github.com/jundot/omlx
 brew install omlx                  # install
 brew update && brew upgrade omlx   # upgrade to latest
 brew services start omlx           # run as background service
-/opt/homebrew/opt/omlx/libexec/bin/pip install mcp  # optional MCP support
 ```
 
 ## Default serving target
@@ -36,7 +35,7 @@ The Makefile derives `MODEL_DIR` as `models/<repo-with-/-replaced-by-__>`. omlx 
 
 ## High-level architecture
 
-- **Benchmark CLI** — `src/mlx_learning/benchmark_cli.py` exposes the `mlx-bench` Typer command (registered via `[project.scripts]`). It loads MLX models via `mlx_lm.load`/`mlx_lm.generate` locally and posts to Ollama at `http://localhost:11434/api/generate` to compare tokens/sec.
+- **Benchmark CLI** — `src/mlx_learning/benchmark_cli.py` exposes the `mlx-bench` Typer command (registered via `[project.scripts]`). It loads MLX models via `mlx_lm.load`/`mlx_lm.generate` locally and posts to omlx at `http://127.0.0.1:8000/v1/chat/completions` to compare tokens/sec.
 - **omlx multi-model server (Makefile-driven)** — production-ready OpenAI-compatible server for Apple Silicon. Serves all models under `models/` with LRU-based memory management. Exposes `/v1/chat/completions`, `/v1/models`, and related endpoints on `:8000`. State tracked via `omlx-server.pid` / `omlx-server.log`.
 - Tests are minimal: `tests/test_hello.py` only covers `mlx_learning.hello.main()`. The benchmark CLI and serving workflow are not covered.
 

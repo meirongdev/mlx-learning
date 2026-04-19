@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-A toolkit for benchmarking and serving MLX-based LLMs on Apple Silicon, served via the [omlx](https://github.com/omlx/omlx) multi-model OpenAI-compatible server. The primary use case is comparing generation speed between local MLX inference, Ollama, and omlx — all on the same machine.
+A toolkit for benchmarking and serving MLX-based LLMs on Apple Silicon, served via the [omlx](https://github.com/omlx/omlx) multi-model OpenAI-compatible server. The primary use case is comparing generation speed between local MLX inference and omlx on the same machine.
 
 **Stack:** Python 3.11+ — `mlx`, `mlx-lm`, `mlx-vlm`, `typer`, `rich`, `openai` — served via `omlx` (installed via brew).
 
@@ -12,7 +12,7 @@ A toolkit for benchmarking and serving MLX-based LLMs on Apple Silicon, served v
 
 Two independent layers:
 
-1. **Benchmark CLI** (`src/mlx_learning/benchmark_cli.py`) — registered as `mlx-bench`. Loads MLX models via `mlx_lm.load`/`mlx_lm.generate` locally, posts to Ollama (`localhost:11434`) and omlx (`localhost:8000`) to compare tokens/sec side by side.
+1. **Benchmark CLI** (`src/mlx_learning/benchmark_cli.py`) — registered as `mlx-bench`. Loads MLX models via `mlx_lm.load`/`mlx_lm.generate` locally and posts to omlx (`localhost:8000`) to compare tokens/sec.
 
 2. **omlx multi-model server** (Makefile-driven) — serves all models auto-discovered under `models/`. Exposes `/v1/chat/completions`, `/v1/models`, and related OpenAI-compatible endpoints. State tracked via `omlx-server.pid` / `omlx-server.log` (gitignored).
 
@@ -28,7 +28,6 @@ Two independent layers:
   brew install omlx
   # Upgrade: brew update && brew upgrade omlx
   # Run as service: brew services start omlx
-  # Optional MCP support: /opt/homebrew/opt/omlx/libexec/bin/pip install mcp
   ```
 - `HF_TOKEN` env var (optional — the default Qwen model is public)
 
@@ -50,7 +49,7 @@ uv run pytest                    # run tests
 uv run ruff check .              # lint
 uv run ruff format .             # format
 uv run mypy .                    # type check (strict mode)
-uv run mlx-bench                 # benchmark MLX vs Ollama vs omlx
+uv run mlx-bench                 # benchmark MLX vs omlx
 ```
 
 ### Serving with omlx
@@ -93,7 +92,7 @@ make proxy-stop
 | `pyproject.toml` | Project metadata, deps, entry points, tool configs (ruff, mypy, pytest) |
 | `Makefile` | Full lifecycle: quickstart, install, download, server, proxy, omlx, bench |
 | `scripts/bootstrap.sh` | Idempotent one-click setup driven by `make quickstart` |
-| `src/mlx_learning/benchmark_cli.py` | `mlx-bench` Typer CLI with `test_mlx`, `test_ollama`, `test_omlx`, `benchmark` |
+| `src/mlx_learning/benchmark_cli.py` | `mlx-bench` Typer CLI with `test_mlx`, `test_omlx`, `benchmark` |
 | `scripts/openai_proxy.py` | OpenAI-compatible proxy forwarding to a local MLX server |
 | `scripts/verify_model.py` | Local `config.json` inspector for downloaded models |
 | `models/` | Downloaded model snapshots (gitignored) |
