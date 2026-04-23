@@ -38,22 +38,33 @@ make omlx-start | omlx-stop | omlx-status | omlx-logs
 
 | Var            | Value                                         |
 | -------------- | --------------------------------------------- |
-| `MODEL_REPO`   | `mlx-community/Qwen3.6-35B-A3B-nvfp4` (MoE, 256k ctx) |
-| `MODEL_DIR`    | `models/mlx-community__Qwen3.6-35B-A3B-nvfp4/` |
+| `MODEL_REPO`   | `mlx-community/Qwen3.6-35B-A3B-4bit` (MoE, 3B active, 256k ctx) |
+| `MODEL_DIR`    | `models/mlx-community__Qwen3.6-35B-A3B-4bit/` |
 | `OMLX_HOST`    | `0.0.0.0`                                     |
 | `OMLX_PORT`    | `8000`                                        |
 | `OMLX_MODEL_DIR` | `models`                                    |
+
+### Performance Optimization (M-series)
+
+The following optimizations are enabled for `omlx` to maximize throughput for `Qwen3.6-35B-A3B-4bit`:
+
+- **System-level**: Run `make optimize-system` to set `iogpu.wired_limit_mb=26000`.
+- **omlx flags**:
+  - `--hot-cache-max-size 4GB`: Prefix caching for near-zero latency on repeating prompts.
+  - `--max-concurrent-requests 2`: Reduces memory fragmentation.
+  - `--initial-cache-blocks 1024`: Pre-allocates KV cache to avoid allocation locks.
 
 `MODEL_DIR` is derived from `MODEL_REPO` by replacing `/` with `__`. omlx auto-discovers all subdirectories under `OMLX_MODEL_DIR`.
 
 ### Available Models on omlx
 
-| Model | Quantization | Context | Status |
-|-------|-------------|---------|--------|
-| Qwen3.6-35B-A3B-nvfp4 | nvfp4 | 256k (262k tokens) | ✅ Default |
-| Qwen3.5-35B-A3B-4bit | 4bit | 256k (262k tokens) | ✅ Available |
-| gemma-4-26b-a4b-it-nvfp4 | nvfp4 | - | ✅ Available |
-| gemma-4-26b-a4b-it-4bit | 4bit | - | ✅ Available |
+Only the default model is installed. omlx auto-discovers any additional model dropped into `models/`.
+
+| Model | Quantization | Size on disk | Context | Notes |
+|-------|-------------|--------------|---------|--------|
+| Qwen3.6-35B-A3B-4bit | 4bit | 19 GB | 256k (262k tokens) | Default — MoE, 3B active per token, ~46 tok/s on M2 Pro 200GB/s (512-token gen, measured) |
+
+**Why A3B MoE instead of a dense 27B?** Apple-Silicon decode is memory-bandwidth bound: the active-weight footprint per token determines `tok/s`. Measured on M2 Pro: Qwen3.6-27B dense = 10.6 tok/s, Qwen3.6-35B-A3B = 45.8 tok/s (~4.3× faster, with a larger/stronger model). Anything under ~16 GB of *active* weights is the ceiling for this class of machine.
 
 **Qwen3.6 (256k context)**: All Qwen3.x models support 262,144 tokens max context with RoPE scaling. omlx respects model config and automatically loads this context window.
 

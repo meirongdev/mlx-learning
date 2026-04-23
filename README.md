@@ -2,7 +2,7 @@
 
 Tools and scripts for running and benchmarking [MLX](https://github.com/ml-explore/mlx) models on Apple Silicon. Models are served by [`mlx_lm.server`](https://github.com/ml-explore/mlx-lm) — a production-ready OpenAI-compatible server included with mlx-lm.
 
-The default model is **`mlx-community/Qwen3.6-35B-A3B-nvfp4`** (MoE, 35B total / 3B active params, NVFP4 quantized, 256k context — runs on a 32 GB Apple Silicon Mac).
+The default model is **`mlx-community/Qwen3.6-35B-A3B-4bit`** (MoE, 35B total / 3B active per token, 4-bit quantized, 256k context — ~46 tok/s on M2 Pro 32 GB, measured).
 
 ## Quickstart (one command)
 
@@ -26,7 +26,7 @@ make quickstart
 Override defaults inline:
 
 ```bash
-make quickstart MODEL_REPO=mlx-community/Qwen3.6-35B-A3B-4bit PORT=8080
+make quickstart PORT=8080   # PORT/HOST/MODEL_REPO are all overridable
 ```
 
 Set `SKIP_SERVER=1` to stop after the model download.
@@ -56,7 +56,7 @@ uv sync
 # Install the optional serving deps (mlx-lm, mlx-vlm, huggingface_hub)
 make server-install
 
-# Download the default model (~18 GB nvfp4) into models/
+# Download the default model (~19 GB, 4-bit MoE) into models/
 make model-download
 
 # Start the server (listens on 0.0.0.0:5001)
@@ -68,7 +68,7 @@ make server-logs
 make server-stop
 ```
 
-The model lands in `models/mlx-community__Qwen3.6-35B-A3B-nvfp4/` (slashes replaced with `__`).
+The model lands in `models/mlx-community__Qwen3.6-35B-A3B-4bit/` (slashes replaced with `__`).
 
 ### Switching to another model
 
@@ -84,7 +84,7 @@ make server-bootstrap MODEL_REPO=mlx-community/Qwen3-30B-A3B-4bit
 ```bash
 curl -s http://localhost:5001/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -d '{"model": "models/mlx-community__Qwen3.6-35B-A3B-nvfp4",
+  -d '{"model": "models/mlx-community__Qwen3.6-35B-A3B-4bit",
        "messages": [{"role": "user", "content": "Hi"}],
        "max_tokens": 32}' | jq .
 ```
@@ -94,7 +94,7 @@ Streaming:
 ```bash
 curl -s http://localhost:5001/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -d '{"model": "models/mlx-community__Qwen3.6-35B-A3B-nvfp4",
+  -d '{"model": "models/mlx-community__Qwen3.6-35B-A3B-4bit",
        "messages": [{"role": "user", "content": "Hi"}],
        "stream": true}'
 ```

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 BASE_URL=${BASE_URL:-http://127.0.0.1:5001}
-MODEL=${MODEL:-models/mlx-community__gemma-4-26b-a4b-it-4bit}
+MODEL=${MODEL:-models/mlx-community__Qwen3.6-35B-A3B-4bit}
 PYTHON_VENV=.venv/bin/python
 
 echo "=== querying server $BASE_URL for model $MODEL ==="
@@ -14,7 +14,7 @@ echo "=== authoritative check: reading config.json ==="
 if [ -x "$PYTHON_VENV" ]; then
   "$PYTHON_VENV" - <<'PY'
 import json,sys
-p='models/mlx-community__gemma-4-26b-a4b-it-4bit/config.json'
+p='models/mlx-community__Qwen3.6-35B-A3B-4bit/config.json'
 try:
     j=json.load(open(p))
     print('config.json model_type:', j.get('model_type'))
@@ -25,7 +25,7 @@ PY
 else
   python - <<'PY'
 import json,sys
-p='models/mlx-community__gemma-4-26b-a4b-it-4bit/config.json'
+p='models/mlx-community__Qwen3.6-35B-A3B-4bit/config.json'
 try:
     j=json.load(open(p))
     print('config.json model_type:', j.get('model_type'))

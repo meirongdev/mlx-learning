@@ -4,7 +4,7 @@
 Usage:
     python scripts/verify_model.py \
         --base http://127.0.0.1:5001 \
-        --model models/mlx-community__Qwen3.5-35B-A3B-4bit
+        --model models/mlx-community__Qwen3.6-35B-A3B-4bit
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ def main() -> int:
     )
     ap.add_argument(
         "--model",
-        default="models/mlx-community__Qwen3.5-35B-A3B-4bit",
+        default="models/mlx-community__Qwen3.6-35B-A3B-4bit",
         help="Local model directory (also used as `model` field in the request)",
     )
     ap.add_argument("--timeout", type=int, default=60, help="HTTP timeout in seconds")

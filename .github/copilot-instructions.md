@@ -27,7 +27,7 @@ brew services start omlx           # run as background service
 
 ## Default serving target
 
-- `MODEL_REPO=mlx-community/Qwen3.6-35B-A3B-nvfp4` (MoE, 35B total / 3B active, NVFP4 quantized, 256k context)
+- `MODEL_REPO=mlx-community/Qwen3.6-35B-A3B-4bit` (MoE, 35B total / 3B active per token, 4-bit quantized, 256k context, ~46 tok/s on M2 Pro)
 - `OMLX_HOST=0.0.0.0`, `OMLX_PORT=8000`
 - `OMLX_MODEL_DIR=models`
 

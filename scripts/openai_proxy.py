@@ -21,7 +21,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 DEFAULT_MLX_BASE = "http://127.0.0.1:5001"
-DEFAULT_MODEL_DIR = "models/mlx-community__Qwen3.5-35B-A3B-4bit"
+DEFAULT_MODEL_DIR = "models/mlx-community__Qwen3.6-35B-A3B-4bit"
 PROXY_TIMEOUT = 600  # seconds
 
 

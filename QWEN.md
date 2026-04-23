@@ -6,7 +6,7 @@ A toolkit for benchmarking and serving MLX-based LLMs on Apple Silicon, served v
 
 **Stack:** Python 3.11+ — `mlx`, `mlx-lm`, `mlx-vlm`, `typer`, `rich`, `openai` — served via `omlx` (installed via brew).
 
-**Default model:** `mlx-community/Qwen3.6-35B-A3B-nvfp4` (MoE, 35B total / 3B active params, NVFP4 quantized, 256k context — fits on 32 GB Mac).
+**Default model:** `mlx-community/Qwen3.6-35B-A3B-4bit` (MoE, 35B total / 3B active, 4-bit quantized, 256k context — ~46 tok/s on M2 Pro 32 GB, measured).
 
 ## Architecture
 
@@ -35,7 +35,7 @@ Two independent layers:
 
 ```bash
 make quickstart                  # scripts/bootstrap.sh: platform check -> uv -> deps -> model -> omlx -> health check
-make quickstart MODEL_REPO=mlx-community/Qwen3.6-35B-A3B-4bit   # override defaults
+make quickstart PORT=8080                                         # PORT/HOST/MODEL_REPO overridable
 ```
 
 Idempotent — safe to re-run. `SKIP_SERVER=1` halts after the model download.
@@ -80,7 +80,7 @@ make proxy-stop
 
 - **uv + Makefile** are the canonical workflows. Do not introduce ad hoc `pip` flows.
 - **src/ layout** — new CLIs go in `[project.scripts]` via `pyproject.toml`, not as top-level scripts.
-- **Model naming** — `models/<repo-with-/-replaced-by-__>` (e.g., `models/mlx-community__Qwen3.6-35B-A3B-nvfp4/`). Preserves multi-model coexistence.
+- **Model naming** — `models/<repo-with-/-replaced-by-__>` (e.g., `models/mlx-community__Qwen3.6-35B-A3B-4bit/`). Preserves multi-model coexistence.
 - **mypy strict** with `ignore_missing_imports = true` (MLX/mlx-lm lack type stubs).
 - **Tests are minimal** — only `tests/test_hello.py` covers `mlx_learning.hello.main()`.
 - **PID/log files** (`omlx-server.pid`, `omlx-server.log`) live at repo root and are gitignored.

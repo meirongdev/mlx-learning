@@ -5,7 +5,7 @@ UV ?= uv
 PYTHON ?= .venv/bin/python
 HF_TOKEN ?=
 HF_HUB_CACHE ?= $(HOME)/.cache/huggingface/hub
-MODEL_REPO ?= mlx-community/Qwen3.6-35B-A3B-nvfp4
+MODEL_REPO ?= mlx-community/Qwen3.6-35B-A3B-4bit
 MODEL_SLUG ?= $(subst /,__,$(MODEL_REPO))
 MODEL_DIR ?= models/$(MODEL_SLUG)
 # mlx_lm.server for text-only LLMs (Qwen, Llama, ...); mlx_vlm.server for VLMs (Gemma 4, ...)
@@ -22,7 +22,7 @@ EXTRA_SERVER_ARGS ?=
 .PHONY: help quickstart install server-install model-download server-bootstrap server-start server-stop \
 	server-restart server-status server-logs test lint format clean clean-server bench \
 	proxy-start proxy-stop proxy-restart proxy-status proxy-logs verify \
-	omlx-install omlx-start omlx-stop omlx-status omlx-logs
+	omlx-install omlx-start omlx-stop omlx-status omlx-logs optimize-system
 
 help:
 	@printf '%s\n' \
@@ -39,6 +39,7 @@ help:
 		'  make server-logs                     - Tail the server log' \
 		'  make proxy-start / -stop / -status / -logs   - Manage OpenAI-compatible proxy on PROXY_PORT' \
 		'  make omlx-start / -stop / -status / -logs   - Manage omlx multi-model server on OMLX_PORT' \
+		'  make optimize-system                 - Optimize macOS GPU wired memory limit (requires sudo)' \
 		'  make bench                           - Run the mlx-bench CLI (MLX vs omlx)' \
 		'' \
 		'Configurable variables:' \
@@ -52,9 +53,15 @@ help:
 		'Examples:' \
 		'  make quickstart                                          # fresh Mac -> running omlx in one command' \
 		'  make server-bootstrap                                    # uses defaults above' \
-		'  make server-start MODEL_REPO=mlx-community/Qwen3-30B-A3B-4bit' \
-		'  make server-start MODEL_REPO=mlx-community/gemma-4-26b-a4b-it-4bit SERVER_MODULE=mlx_vlm.server' \
+		'  make server-start MODEL_REPO=mlx-community/Qwen3.6-27B-4bit   # dense alternative' \
 		'  make proxy-start                                         # OpenAI-compat shim on :$(PROXY_PORT)'
+
+optimize-system:
+	@echo "Optimizing GPU wired memory limit..."
+	@echo "Current value: $$(sysctl -n iogpu.wired_limit_mb 2>/dev/null || echo 'not set')"
+	@echo "Setting to 30000 (recommended for 32GB RAM Macs with large models)..."
+	sudo sysctl iogpu.wired_limit_mb=30000
+	@echo "Done."
 
 quickstart:
 	@MODEL_REPO="$(MODEL_REPO)" MODEL_DIR="$(MODEL_DIR)" \
