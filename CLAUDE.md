@@ -99,8 +99,9 @@ omlx auto-discovers any model dropped under `models/`. Currently on disk (M5 box
 
 | Model dir                                           | Quantization | Size   | Context | Notes |
 |-----------------------------------------------------|--------------|--------|---------|-------|
-| `mlx-community__Qwen3.6-35B-A3B-nvfp4`              | NVFP4        | ~19 GB | 256k    | **Fastest on M5** (39.74 tok/s @ 512); pick this on M5 |
-| `mlx-community__Qwen3.6-35B-A3B-4bit-DWQ`           | DWQ-4bit     | ~19 GB | 256k    | Repo default; better perplexity in theory; on M5 it measured 31.33 tok/s (slower than NVFP4) |
+| `mlx-community__Qwen3.6-35B-A3B-nvfp4`              | NVFP4        | ~19 GB | 256k    | **Fastest on M5** (39.74 tok/s @ 512); M2 Pro: 45.36 tok/s (no HW advantage) |
+| `mlx-community__Qwen3.6-35B-A3B-4bit-DWQ`           | DWQ-4bit     | ~19 GB | 256k    | Repo default; M2 Pro: 45.36 tok/s; on M5: 31.33 tok/s (slower than NVFP4) |
+| `mlx-community__Qwen3.6-35B-A3B-4bit`               | std 4bit     | ~19 GB | 256k    | M2 Pro: **45.89 tok/s** (marginally fastest on M2 Pro) |
 | `mlx-community__gemma-4-26b-a4b-it-nvfp4`           | NVFP4        | ~15 GB | 128k    | Smaller alt; not benchmarked here |
 
 **Why A3B MoE instead of a dense 27B?** Apple-Silicon decode is memory-bandwidth bound: the active-weight footprint per token determines `tok/s`. Measured on M2 Pro: Qwen3.6-27B dense = 10.6 tok/s, Qwen3.6-35B-A3B = 45.8 tok/s (~4.3× faster, with a larger/stronger model). Anything under ~16 GB of *active* weights is the ceiling for this class of machine.
@@ -111,7 +112,7 @@ omlx auto-discovers any model dropped under `models/`. Currently on disk (M5 box
 
 | Machine      | Bandwidth   | Best 4-bit so far | tok/s | Notes |
 |--------------|-------------|-------------------|------:|-------|
-| M2 Pro 32 GB | 200 GB/s    | std 4bit (`mlx-community__Qwen3.6-35B-A3B-4bit`) | ~45.8 | Historical; DWQ/NVFP4 not yet re-tested |
+| M2 Pro 32 GB | 200 GB/s    | std 4bit (`mlx-community__Qwen3.6-35B-A3B-4bit`) | **45.89** | 2026-05-03; DWQ=45.36, NVFP4=45.36 — all three tied (bandwidth-bound, no FP4 HW) |
 | M5 32 GB     | 153.6 GB/s  | **NVFP4** (`mlx-community__Qwen3.6-35B-A3B-nvfp4`) | **39.74 cold / 49.14 warm** | DWQ measured 31.33 cold / 32.11 warm; NVFP4 wins by 1.25–1.53× |
 
 The M2 Pro is faster despite being older — bandwidth dominates decode. See `OPTIMIZATION.md` and `bench-results/` for raw logs.

@@ -1,0 +1,17 @@
+Machine: Apple M2 Pro, 32 GB, 200 GB/s
+Date: 2026-05-03
+Tool: mlx-bench (omlx sequential benchmark)
+Prompt: "Write a 200-word introduction to quantum computing for a 10-year-old."
+Max tokens: 512
+Warmup: yes (warm tok/s reported)
+
+Results:
+  mlx-community__Qwen3.6-35B-A3B-4bit     45.89 tok/s  load: 9.72s
+  mlx-community__Qwen3.6-35B-A3B-4bit-DWQ 45.36 tok/s  load: 7.35s
+  mlx-community__Qwen3.6-35B-A3B-nvfp4    45.36 tok/s  load: 7.15s
+
+Conclusion: All three quantization formats are bandwidth-bound on M2 Pro (200 GB/s).
+No meaningful tok/s difference between std 4bit, DWQ-4bit, and NVFP4.
+NVFP4 advantage seen on M5 (FP4 GPU accelerators) does not apply here.
+DWQ and NVFP4 load ~2s faster than std 4bit (file structure difference).
+Recommend: keep repo default (DWQ-4bit) on M2 Pro; switch to NVFP4 only on M5.

@@ -2,7 +2,7 @@
 
 Tools and scripts for running and benchmarking [MLX](https://github.com/ml-explore/mlx) models on Apple Silicon. Models are served by [`mlx_lm.server`](https://github.com/ml-explore/mlx-lm) — a production-ready OpenAI-compatible server included with mlx-lm.
 
-The default model is **`mlx-community/Qwen3.6-35B-A3B-4bit-DWQ`** (MoE, 35B total / 3B active per token, DWQ-4bit quantized, 256k context). DWQ ("Dynamic Weight Quantization") is currently the strongest 4-bit MLX quant — it beats both standard MLX-4bit and FP4 variants (NVFP4 / MXFP4 fall back to FP16 on MLX).
+The default model is **`mlx-community/Qwen3.6-35B-A3B-4bit-DWQ`** (MoE, 35B total / 3B active per token, DWQ-4bit quantized, 256k context). Quantization format choice is machine-dependent: on M2 Pro all three formats (4bit / DWQ / NVFP4) score identically (~45–46 tok/s, bandwidth-bound); on M5, NVFP4 is 1.25–1.53× faster thanks to native FP4 GPU accelerators.
 
 ## Multi-machine setup
 
@@ -129,16 +129,29 @@ uv run mlx-bench --prompt "Explain black holes" --max-tokens 256 --verbose
 
 Options: `--mlx-model`, `--omlx-model`, `--prompt`, `--max-tokens`, `--verbose`.
 
-### Reference numbers
+### Reference numbers (Qwen3.6-35B-A3B, warmup + 512 tokens)
 
-See `OPTIMIZATION.md` for the full per-machine table. Reproduce on whichever box you're on:
+| Model | M2 Pro tok/s | M5 tok/s | Notes |
+|-------|------------:|----------:|-------|
+| `4bit` (std) | **45.89** | — | M2 Pro best; no FP4 HW advantage |
+| `4bit-DWQ` | 45.36 | 31.33 | M2 Pro bandwidth-bound; M5 limited by 153.6 GB/s |
+| `nvfp4` | 45.36 | 39.74 cold / **49.14** warm | M5 native FP4 accelerators kick in; warm peak beats M2 Pro |
+
+**Why all three tie on M2 Pro:** decode is memory-bandwidth-bound — `tok/s ≈ bandwidth / bytes_per_token`. All formats load the same ~19 GB of 4-bit weights, so the 200 GB/s bus is the ceiling regardless of format. M2 Pro has no native FP4 hardware, so NVFP4 offers no advantage.
+
+**Why M5 NVFP4 can beat M2 Pro:** M5 (Oct 2025) added native FP4 GPU accelerators that skip dequantization entirely, reducing compute overhead enough to offset the narrower bus (153.6 GB/s). The 49 tok/s warm peak requires model weights to be resident in GPU wired memory; cold runs (~36–40 tok/s) are limited by DRAM bandwidth as usual.
+
+Reproduce on whichever box you're on:
 
 ```bash
 make detect-machine          # always start here
 make omlx-start              # fire up omlx
-uv run mlx-bench mlx-community__Qwen3.6-35B-A3B-4bit-DWQ \
+uv run mlx-bench mlx-community__Qwen3.6-35B-A3B-4bit \
+                 mlx-community__Qwen3.6-35B-A3B-4bit-DWQ \
                  mlx-community__Qwen3.6-35B-A3B-nvfp4
 ```
+
+Raw logs in `bench-results/`.
 
 ## Development
 
@@ -187,3 +200,35 @@ make omlx-stop                   # stop the server
 ```
 
 Endpoint: `http://127.0.0.1:8000/v1`
+
+## AI coding assistant configuration
+
+Point any OpenAI-compatible coding assistant at the local omlx server (`make omlx-start` must be running). The model slug uses `__` instead of `/` in the repo name.
+
+### Codex CLI (`~/.codex/config.toml`)
+
+```toml
+model_provider = "omlx"
+model = "mlx-community__Qwen3.6-35B-A3B-4bit"
+
+[profiles.omlx]
+model_provider = "omlx"
+model = "mlx-community__Qwen3.6-35B-A3B-4bit"
+
+[model_providers.omlx]
+name = "oMLX"
+base_url = "http://127.0.0.1:8000/v1"
+wire_api = "responses"
+```
+
+### Qwen Code (`~/.qwen/settings.json`)
+
+```json
+{
+  "security": { "auth": { "selectedType": "openai" } },
+  "model": { "name": "mlx-community__Qwen3.6-35B-A3B-4bit" },
+  "openaiBaseUrl": "http://127.0.0.1:8000/v1"
+}
+```
+
+When you switch the default model, update the `model` field in both files. The slug is always `MODEL_REPO` with `/` replaced by `__` (e.g. `mlx-community/Qwen3.6-35B-A3B-4bit` → `mlx-community__Qwen3.6-35B-A3B-4bit`).
