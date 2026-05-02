@@ -5,7 +5,7 @@ UV ?= uv
 PYTHON ?= .venv/bin/python
 HF_TOKEN ?=
 HF_HUB_CACHE ?= $(HOME)/.cache/huggingface/hub
-MODEL_REPO ?= mlx-community/Qwen3.6-35B-A3B-4bit-DWQ
+MODEL_REPO ?= mlx-community/Qwen3.6-35B-A3B-nvfp4
 MODEL_SLUG ?= $(subst /,__,$(MODEL_REPO))
 MODEL_DIR ?= models/$(MODEL_SLUG)
 # mlx_lm.server for text-only LLMs (Qwen, Llama, ...); mlx_vlm.server for VLMs (Gemma 4, ...)
@@ -22,7 +22,8 @@ EXTRA_SERVER_ARGS ?=
 .PHONY: help quickstart install server-install model-download server-bootstrap server-start server-stop \
 	server-restart server-status server-logs test lint format clean clean-server bench \
 	proxy-start proxy-stop proxy-restart proxy-status proxy-logs verify \
-	omlx-install omlx-start omlx-stop omlx-status omlx-logs optimize-system detect-machine
+	omlx-install omlx-start omlx-stop omlx-status omlx-logs optimize-system detect-machine \
+	vllm-install vllm-start vllm-stop vllm-restart vllm-status vllm-logs vllm-bench
 
 help:
 	@printf '%s\n' \
@@ -40,8 +41,10 @@ help:
 		'  make server-logs                     - Tail the server log' \
 		'  make proxy-start / -stop / -status / -logs   - Manage OpenAI-compatible proxy on PROXY_PORT' \
 		'  make omlx-start / -stop / -status / -logs   - Manage omlx multi-model server on OMLX_PORT' \
+		'  make vllm-start / -stop / -status / -logs   - Manage vllm-mlx server on VLLM_PORT (default: 8000)' \
+		'  make vllm-bench                      - Benchmark VLLM_MODEL_REPO via mlx-bench (--no-unload)' \
 		'  make optimize-system                 - Optimize macOS GPU wired memory limit (requires sudo)' \
-		'  make bench                           - Run the mlx-bench CLI (MLX vs omlx)' \
+		'  make bench                           - Run the mlx-bench CLI (pass model names as args)' \
 		'' \
 		'Configurable variables:' \
 		'  MODEL_REPO=$(MODEL_REPO)' \
@@ -311,4 +314,69 @@ omlx-status:
 
 omlx-logs:
 	@tail -n 200 "$(OMLX_LOG)"
+
+# vllm-mlx OpenAI-compatible server (alternative to omlx; shares port 8000 — stop one before starting the other)
+VLLM_MODEL_REPO ?= mlx-community/Qwen3.6-35B-A3B-nvfp4
+VLLM_MODEL_SLUG ?= $(subst /,__,$(VLLM_MODEL_REPO))
+VLLM_MODEL_DIR  ?= models/$(VLLM_MODEL_SLUG)
+VLLM_HOST       ?= 0.0.0.0
+VLLM_PORT       ?= 8000
+VLLM_PID        ?= vllm-server.pid
+VLLM_LOG        ?= vllm-server.log
+VLLM_EXTRA_ARGS ?= --gpu-memory-utilization 0.90 --cache-memory-mb 4096 \
+                   --max-num-seqs 2 --use-paged-cache --max-cache-blocks 1024
+
+vllm-install:
+	@if ! command -v vllm-mlx >/dev/null 2>&1; then \
+		echo "vllm-mlx not found. Install with:"; \
+		echo "  uv tool install vllm-mlx"; \
+		exit 1; \
+	fi
+	@vllm-mlx --version 2>/dev/null || echo "vllm-mlx installed"
+
+vllm-start:
+	@bash scripts/detect_machine.sh
+	@if [ -f "$(VLLM_PID)" ] && kill -0 "$$(cat "$(VLLM_PID)")" 2>/dev/null; then \
+		echo "vllm-mlx already running with PID $$(cat "$(VLLM_PID)")"; exit 0; \
+	fi
+	@if lsof -nP -iTCP:$(VLLM_PORT) -sTCP:LISTEN >/dev/null 2>&1; then \
+		echo "Port $(VLLM_PORT) is already in use (omlx running?):"; \
+		lsof -nP -iTCP:$(VLLM_PORT) -sTCP:LISTEN; \
+		exit 1; \
+	fi
+	@if [ ! -d "$(VLLM_MODEL_DIR)" ]; then \
+		echo "Model directory not found: $(VLLM_MODEL_DIR)"; \
+		echo "Run: make model-download MODEL_REPO=$(VLLM_MODEL_REPO)"; \
+		exit 1; \
+	fi
+	@nohup vllm-mlx serve "$(VLLM_MODEL_DIR)" \
+		--served-model-name "$(VLLM_MODEL_SLUG)" \
+		--host "$(VLLM_HOST)" --port "$(VLLM_PORT)" \
+		$(VLLM_EXTRA_ARGS) >"$(VLLM_LOG)" 2>&1 & \
+	pid=$$!; echo "$$pid" > "$(VLLM_PID)"; \
+	echo "Started vllm-mlx PID $$pid on $(VLLM_HOST):$(VLLM_PORT) ($(VLLM_MODEL_SLUG))"
+
+vllm-stop:
+	@if [ ! -f "$(VLLM_PID)" ]; then echo "No vllm-mlx PID file"; exit 0; fi
+	@pid=$$(cat "$(VLLM_PID)"); \
+	if kill -0 "$$pid" 2>/dev/null; then kill "$$pid"; echo "Stopped vllm-mlx PID $$pid"; \
+	else echo "PID $$pid not running"; fi; \
+	rm -f "$(VLLM_PID)"
+
+vllm-restart: vllm-stop vllm-start
+
+vllm-status:
+	@if [ -f "$(VLLM_PID)" ]; then echo "PID: $$(cat "$(VLLM_PID)")"; else echo "PID: not running"; fi
+	@echo "Model:    $(VLLM_MODEL_SLUG)"
+	@echo "Endpoint: http://127.0.0.1:$(VLLM_PORT)/v1"
+	@lsof -nP -iTCP:$(VLLM_PORT) -sTCP:LISTEN || true
+
+vllm-logs:
+	@tail -n 200 "$(VLLM_LOG)"
+
+vllm-bench:
+	@bash scripts/detect_machine.sh
+	$(UV) run mlx-bench "$(VLLM_MODEL_SLUG)" \
+		--omlx-url http://127.0.0.1:$(VLLM_PORT) \
+		--no-unload
 

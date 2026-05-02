@@ -47,7 +47,11 @@ uv run mypy .                                    # strict mode
 # Benchmark MLX vs omlx
 uv run mlx-bench                                 # or: make bench
 
-# omlx multi-model server
+# vllm-mlx server (default on M2 Pro, nvfp4)
+make vllm-start | vllm-stop | vllm-restart | vllm-status | vllm-logs
+make vllm-bench                           # benchmark VLLM_MODEL_SLUG with --no-unload
+
+# omlx multi-model server (default on M5, or fallback)
 make omlx-start | omlx-stop | omlx-status | omlx-logs
 ```
 
@@ -57,11 +61,16 @@ make omlx-start | omlx-stop | omlx-status | omlx-logs
 
 | Var            | Value                                                              |
 | -------------- | ------------------------------------------------------------------ |
-| `MODEL_REPO`   | `mlx-community/Qwen3.6-35B-A3B-4bit-DWQ` (MoE, 3B active, 256k ctx) |
-| `MODEL_DIR`    | `models/mlx-community__Qwen3.6-35B-A3B-4bit-DWQ/`                  |
-| `OMLX_HOST`    | `0.0.0.0`                                                          |
-| `OMLX_PORT`    | `8000`                                                             |
-| `OMLX_MODEL_DIR` | `models`                                                         |
+| `MODEL_REPO`       | `mlx-community/Qwen3.6-35B-A3B-nvfp4` (MoE, 3B active, 256k ctx) |
+| `MODEL_DIR`        | `models/mlx-community__Qwen3.6-35B-A3B-nvfp4/`                    |
+| `VLLM_MODEL_REPO`  | `mlx-community/Qwen3.6-35B-A3B-nvfp4`                             |
+| `VLLM_HOST`        | `0.0.0.0`                                                          |
+| `VLLM_PORT`        | `8000`                                                             |
+| `OMLX_HOST`        | `0.0.0.0`                                                          |
+| `OMLX_PORT`        | `8000`                                                             |
+| `OMLX_MODEL_DIR`   | `models`                                                           |
+
+**Active server on M2 Pro: vllm-mlx** (switched 2026-05-03). omlx targets still available for M5 or fallback.
 
 ### Quantization on this hardware — empirical, not theoretical
 
