@@ -6,7 +6,18 @@ A toolkit for benchmarking and serving MLX-based LLMs on Apple Silicon, served v
 
 **Stack:** Python 3.11+ — `mlx`, `mlx-lm`, `mlx-vlm`, `typer`, `rich`, `openai` — served via `omlx` (installed via brew).
 
-**Default model:** `mlx-community/Qwen3.6-35B-A3B-4bit` (MoE, 35B total / 3B active, 4-bit quantized, 256k context — ~46 tok/s on M2 Pro 32 GB, measured).
+**Default model:** `mlx-community/Qwen3.6-35B-A3B-4bit-DWQ` (MoE, 35B total / 3B active, DWQ-4bit, 256k context). DWQ is the published-best 4-bit MLX quant. **However on the M5 box** NVFP4 measured ~25% faster (39.74 vs 31.33 tok/s @ 512, see `bench-results/`) — likely M5's GPU neural accelerators or omlx-specific FP4 paths. Override `MODEL_REPO=mlx-community/Qwen3.6-35B-A3B-nvfp4` on M5 when tok/s matters. M2 Pro has not yet been re-measured.
+
+## Hosts
+
+This repo runs on two Macs (both 32 GB unified memory):
+
+| Machine    | Chip            | Bandwidth   |
+|------------|-----------------|-------------|
+| M2 Pro MBP | Apple M2 Pro    | 200 GB/s    |
+| M5 MBP 14" | Apple M5 (base) | 153.6 GB/s  |
+
+Run `make detect-machine` (or `bash scripts/detect_machine.sh`) before any download/serve/benchmark — outputs chip, RAM, bandwidth, and the GPU wired-memory limit.
 
 ## Architecture
 
@@ -80,7 +91,7 @@ make proxy-stop
 
 - **uv + Makefile** are the canonical workflows. Do not introduce ad hoc `pip` flows.
 - **src/ layout** — new CLIs go in `[project.scripts]` via `pyproject.toml`, not as top-level scripts.
-- **Model naming** — `models/<repo-with-/-replaced-by-__>` (e.g., `models/mlx-community__Qwen3.6-35B-A3B-4bit/`). Preserves multi-model coexistence.
+- **Model naming** — `models/<repo-with-/-replaced-by-__>` (e.g., `models/mlx-community__Qwen3.6-35B-A3B-4bit-DWQ/`). Preserves multi-model coexistence.
 - **mypy strict** with `ignore_missing_imports = true` (MLX/mlx-lm lack type stubs).
 - **Tests are minimal** — only `tests/test_hello.py` covers `mlx_learning.hello.main()`.
 - **PID/log files** (`omlx-server.pid`, `omlx-server.log`) live at repo root and are gitignored.

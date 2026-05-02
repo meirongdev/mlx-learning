@@ -1,0 +1,25 @@
+──────────────────────────────── omlx Benchmark ────────────────────────────────
+──────────────── [1/2] mlx-community__Qwen3.6-35B-A3B-4bit-DWQ ─────────────────
+Loaded/warmed in 34.22s
+--- Testing omlx: mlx-community__Qwen3.6-35B-A3B-4bit-DWQ @ 
+http://127.0.0.1:8000 ---
+Generated Tokens: 1024
+Duration: 35.03s
+Tokens/sec (wall clock): 29.23
+Unloaded mlx-community__Qwen3.6-35B-A3B-4bit-DWQ
+────────────────── [2/2] mlx-community__Qwen3.6-35B-A3B-nvfp4 ──────────────────
+Loaded/warmed in 51.74s
+--- Testing omlx: mlx-community__Qwen3.6-35B-A3B-nvfp4 @ http://127.0.0.1:8000 
+---
+Generated Tokens: 1024
+Duration: 28.08s
+Tokens/sec (wall clock): 36.47
+Unloaded mlx-community__Qwen3.6-35B-A3B-nvfp4
+────────────────────────────── Comparison Result ───────────────────────────────
+                             Performance Comparison                             
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃ Model                               ┃ Tokens/sec ┃ Load (s) ┃ Relative Speed ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ mlx-community__Qwen3.6-35B-A3B-nvf… │      36.47 │    51.74 │          1.25x │
+│ mlx-community__Qwen3.6-35B-A3B-4bi… │      29.23 │    34.22 │          1.00x │
+└─────────────────────────────────────┴────────────┴──────────┴────────────────┘

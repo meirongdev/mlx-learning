@@ -2,7 +2,26 @@
 
 Tools and scripts for running and benchmarking [MLX](https://github.com/ml-explore/mlx) models on Apple Silicon. Models are served by [`mlx_lm.server`](https://github.com/ml-explore/mlx-lm) — a production-ready OpenAI-compatible server included with mlx-lm.
 
-The default model is **`mlx-community/Qwen3.6-35B-A3B-4bit`** (MoE, 35B total / 3B active per token, 4-bit quantized, 256k context — ~46 tok/s on M2 Pro 32 GB, measured).
+The default model is **`mlx-community/Qwen3.6-35B-A3B-4bit-DWQ`** (MoE, 35B total / 3B active per token, DWQ-4bit quantized, 256k context). DWQ ("Dynamic Weight Quantization") is currently the strongest 4-bit MLX quant — it beats both standard MLX-4bit and FP4 variants (NVFP4 / MXFP4 fall back to FP16 on MLX).
+
+## Multi-machine setup
+
+This repo is shared between two dev boxes (both 32 GB):
+
+| Machine        | Chip            | Memory bandwidth |
+| -------------- | --------------- | ---------------- |
+| M2 Pro MBP     | Apple M2 Pro    | 200 GB/s         |
+| M5 MBP 14"     | Apple M5 (base) | 153.6 GB/s       |
+
+Decode tok/s is bandwidth-bound, so the M2 Pro is **faster** for plain decode despite the M5's newer architecture. Identify the host before running anything heavy:
+
+```bash
+make detect-machine                          # prints chip / RAM / bandwidth / wired-limit
+bash scripts/detect_machine.sh --quiet       # KEY=VALUE lines for `eval`
+bash scripts/detect_machine.sh --check=M5    # exit 1 if not running on the expected chip
+```
+
+`make model-download`, `make omlx-start`, `make bench`, and `scripts/bootstrap.sh` print this header automatically.
 
 ## Quickstart (one command)
 
@@ -68,7 +87,7 @@ make server-logs
 make server-stop
 ```
 
-The model lands in `models/mlx-community__Qwen3.6-35B-A3B-4bit/` (slashes replaced with `__`).
+The model lands in `models/mlx-community__Qwen3.6-35B-A3B-4bit-DWQ/` (slashes replaced with `__`).
 
 ### Switching to another model
 
@@ -84,7 +103,7 @@ make server-bootstrap MODEL_REPO=mlx-community/Qwen3-30B-A3B-4bit
 ```bash
 curl -s http://localhost:5001/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -d '{"model": "models/mlx-community__Qwen3.6-35B-A3B-4bit",
+  -d '{"model": "models/mlx-community__Qwen3.6-35B-A3B-4bit-DWQ",
        "messages": [{"role": "user", "content": "Hi"}],
        "max_tokens": 32}' | jq .
 ```
@@ -94,7 +113,7 @@ Streaming:
 ```bash
 curl -s http://localhost:5001/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -d '{"model": "models/mlx-community__Qwen3.6-35B-A3B-4bit",
+  -d '{"model": "models/mlx-community__Qwen3.6-35B-A3B-4bit-DWQ",
        "messages": [{"role": "user", "content": "Hi"}],
        "stream": true}'
 ```
@@ -110,15 +129,16 @@ uv run mlx-bench --prompt "Explain black holes" --max-tokens 256 --verbose
 
 Options: `--mlx-model`, `--omlx-model`, `--prompt`, `--max-tokens`, `--verbose`.
 
-### Reference numbers (M2 MacBook Pro, 32 GB)
+### Reference numbers
 
-Qwen 3.5 9B, 4-bit quantization:
+See `OPTIMIZATION.md` for the full per-machine table. Reproduce on whichever box you're on:
 
-| Engine | Model               | Tokens/sec | Relative |
-| :----- | :------------------ | ---------: | -------: |
-| MLX    | Qwen3.5-9B-MLX-4bit |      28.35 |    1.53x |
-
-Reproduce: `uv run mlx-bench --max-tokens 128`
+```bash
+make detect-machine          # always start here
+make omlx-start              # fire up omlx
+uv run mlx-bench mlx-community__Qwen3.6-35B-A3B-4bit-DWQ \
+                 mlx-community__Qwen3.6-35B-A3B-nvfp4
+```
 
 ## Development
 

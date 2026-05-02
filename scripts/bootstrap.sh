@@ -32,22 +32,19 @@ die()  { printf '%s  ✗ %s%s\n' "$c_red" "$*" "$c_reset" >&2; exit 1; }
 
 # --- 1. Platform ---------------------------------------------------------------
 step "Checking platform"
-[[ "$(uname -s)" == "Darwin" ]] || die "macOS required (got $(uname -s))"
-[[ "$(uname -m)" == "arm64"  ]] || die "Apple Silicon required (got $(uname -m)); MLX does not support Intel Macs"
-ok "macOS $(sw_vers -productVersion) on Apple Silicon"
+# This repo is shared between an M2 Pro and an M5 (both 32 GB). Print chip/RAM/
+# bandwidth before doing anything that depends on the machine.
+"$REPO_ROOT/scripts/detect_machine.sh" || die "platform check failed"
 
-total_mem_gb=$(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 ))
-ok "Unified memory: ${total_mem_gb} GB"
-if (( total_mem_gb < 24 )); then
-    warn "${total_mem_gb} GB is tight for the default 35B MoE (19 GB on disk, 3B active). Consider a smaller model or lower context."
+eval "$("$REPO_ROOT/scripts/detect_machine.sh" --quiet)"
+
+if (( MACHINE_RAM_GB < 24 )); then
+    warn "${MACHINE_RAM_GB} GB is tight for the default 35B MoE (~19 GB on disk, 3B active). Consider a smaller model or lower context."
 fi
 
-wired_limit=$(sysctl -n iogpu.wired_limit_mb 2>/dev/null || echo 0)
-if (( wired_limit < 16000 )); then
-    warn "GPU wired memory limit is low (${wired_limit}MB). Performance may suffer."
+if (( MACHINE_WIRED_MB < 16000 )); then
+    warn "GPU wired memory limit is low (${MACHINE_WIRED_MB}MB). Performance may suffer."
     warn "Run 'make optimize-system' to set it to 30000MB (recommended for 32GB RAM Macs)."
-else
-    ok "GPU wired memory limit: ${wired_limit}MB"
 fi
 
 # --- 2. uv --------------------------------------------------------------------

@@ -5,7 +5,7 @@ UV ?= uv
 PYTHON ?= .venv/bin/python
 HF_TOKEN ?=
 HF_HUB_CACHE ?= $(HOME)/.cache/huggingface/hub
-MODEL_REPO ?= mlx-community/Qwen3.6-35B-A3B-4bit
+MODEL_REPO ?= mlx-community/Qwen3.6-35B-A3B-4bit-DWQ
 MODEL_SLUG ?= $(subst /,__,$(MODEL_REPO))
 MODEL_DIR ?= models/$(MODEL_SLUG)
 # mlx_lm.server for text-only LLMs (Qwen, Llama, ...); mlx_vlm.server for VLMs (Gemma 4, ...)
@@ -22,11 +22,12 @@ EXTRA_SERVER_ARGS ?=
 .PHONY: help quickstart install server-install model-download server-bootstrap server-start server-stop \
 	server-restart server-status server-logs test lint format clean clean-server bench \
 	proxy-start proxy-stop proxy-restart proxy-status proxy-logs verify \
-	omlx-install omlx-start omlx-stop omlx-status omlx-logs optimize-system
+	omlx-install omlx-start omlx-stop omlx-status omlx-logs optimize-system detect-machine
 
 help:
 	@printf '%s\n' \
 		'Available targets:' \
+		'  make detect-machine                  - Print chip / RAM / bandwidth (this repo runs on M2 Pro AND M5)' \
 		'  make quickstart                      - One-click: install deps, download MODEL_REPO, start omlx, health-check' \
 		'  make install                         - Install base project dependencies' \
 		'  make server-install                  - Install server dependencies (mlx-lm/mlx-vlm + huggingface_hub)' \
@@ -56,8 +57,12 @@ help:
 		'  make server-start MODEL_REPO=mlx-community/Qwen3.6-27B-4bit   # dense alternative' \
 		'  make proxy-start                                         # OpenAI-compat shim on :$(PROXY_PORT)'
 
+detect-machine:
+	@bash scripts/detect_machine.sh
+
 optimize-system:
 	@echo "Optimizing GPU wired memory limit..."
+	@bash scripts/detect_machine.sh
 	@echo "Current value: $$(sysctl -n iogpu.wired_limit_mb 2>/dev/null || echo 'not set')"
 	@echo "Setting to 30000 (recommended for 32GB RAM Macs with large models)..."
 	sudo sysctl iogpu.wired_limit_mb=30000
@@ -76,6 +81,8 @@ server-install:
 	$(UV) sync --extra server
 
 model-download: server-install
+	@bash scripts/detect_machine.sh
+	@echo "Target: $(MODEL_REPO) -> $(MODEL_DIR)"
 	@mkdir -p "$(dir $(MODEL_DIR))"
 	@HF_TOKEN="$(HF_TOKEN)" MODEL_REPO="$(MODEL_REPO)" MODEL_DIR="$(MODEL_DIR)" $(PYTHON) -c '\
 from pathlib import Path; \
@@ -203,6 +210,7 @@ clean: clean-server
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 
 bench:
+	@bash scripts/detect_machine.sh
 	$(UV) run mlx-bench
 
 # OpenAI-compatible proxy to MLX server
@@ -269,6 +277,7 @@ omlx-install:
 	@echo "omlx $(shell omlx --version 2>/dev/null || echo 'installed') found on PATH"
 
 omlx-start:
+	@bash scripts/detect_machine.sh
 	@if [ -f "$(OMLX_PID)" ] && kill -0 "$$(cat "$(OMLX_PID)")" 2>/dev/null; then \
 		echo "omlx already running with PID $$(cat "$(OMLX_PID)")"; exit 0; \
 	fi

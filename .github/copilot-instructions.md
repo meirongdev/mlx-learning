@@ -15,6 +15,7 @@
 - `make model-download` — download `MODEL_REPO` into `MODEL_DIR`. `HF_TOKEN` is **optional** (most `mlx-community/*` repos are public); pass it only for gated/private repos.
 - `make omlx-install` — check/install omlx (Homebrew tap `jundot/omlx`).
 - `make omlx-start` / `omlx-stop` / `omlx-restart` / `omlx-status` / `omlx-logs` — omlx server lifecycle.
+- `make detect-machine` — print chip/RAM/bandwidth. Repo is shared between an M2 Pro and an M5 (both 32 GB); host-dependent steps (`model-download`, `omlx-start`, `bench`, `bootstrap.sh`) call this first.
 
 ### omlx (Homebrew tap)
 
@@ -27,11 +28,13 @@ brew services start omlx           # run as background service
 
 ## Default serving target
 
-- `MODEL_REPO=mlx-community/Qwen3.6-35B-A3B-4bit` (MoE, 35B total / 3B active per token, 4-bit quantized, 256k context, ~46 tok/s on M2 Pro)
+- `MODEL_REPO=mlx-community/Qwen3.6-35B-A3B-4bit-DWQ` (MoE, 35B total / 3B active per token, DWQ-4bit, 256k context).
 - `OMLX_HOST=0.0.0.0`, `OMLX_PORT=8000`
 - `OMLX_MODEL_DIR=models`
 
 The Makefile derives `MODEL_DIR` as `models/<repo-with-/-replaced-by-__>`. omlx auto-discovers all model subdirectories under `OMLX_MODEL_DIR`.
+
+DWQ ("Dynamic Weight Quantization") is the published-best 4-bit MLX quant as of early 2026. **However, on the M5 box** an empirical run (2026-05-03, `bench-results/`) shows NVFP4 ~25% faster than DWQ for `Qwen3.6-35B-A3B` (39.74 vs 31.33 tok/s @ 512), likely due to M5's GPU neural accelerators and/or omlx-specific FP4 paths. Treat the DWQ default as "the safe fallback" and override to `mlx-community/Qwen3.6-35B-A3B-nvfp4` when running on M5 if tok/s matters. The M2 Pro box has not been re-measured; conventional guidance (DWQ > NVFP4) likely still applies there.
 
 ## High-level architecture
 
