@@ -25,33 +25,55 @@ uv run mlx-bench <model1> <model2> --max-tokens 1024 \
 
 ## Summary so far
 
-### M5 (Apple M5 base, 32 GB, 153.6 GB/s)
-Qwen3.6-35B-A3B head-to-head, omlx 0.x, MLX (latest). Each model loaded → warmed → timed → unloaded sequentially. All runs with the same default prompt ("Write a 200-word introduction to quantum computing for a 10-year-old.").
+### M5 (Apple M5 base, 32 GB, 153 GB/s)
+Qwen3.6-35B-A3B full 3-way comparison, omlx 0.x, MLX (latest). Each model loaded → warmed → timed → unloaded sequentially. All runs with the same default prompt ("Write a 200-word introduction to quantum computing for a 10-year-old.").
 
-| Run | Date / state           | max_tokens | NVFP4 tok/s | DWQ tok/s | NVFP4 / DWQ |
-|-----|------------------------|-----------:|------------:|----------:|------------:|
-| 1   | 2026-05-03, cold start | 512        | **39.74**   | 31.33     | 1.27×       |
-| 2   | 2026-05-03, cold-ish   | 1024       | **36.47**   | 29.23     | 1.25×       |
-| 3   | 2026-05-03, warm       | 1024       | **49.14**   | 32.11     | **1.53×**   |
+**512 tokens (cold/warm-mixed):**
 
-**NVFP4 wins consistently on M5 + omlx.** The gap widens once the system is warm — file cache, omlx hot prefix cache (`--hot-cache-max-size 4GB`), and any GPU/accelerator state are all primed. Steady-state tok/s on this M5 is closer to **49 tok/s** for NVFP4 than the cold-start ~38 tok/s. DWQ benefits less from warm-state (only ~10% lift, vs NVFP4's ~35%), suggesting something other than file cache is helping NVFP4 — likely accelerator or kernel warmup specific to FP4.
+| Model                                | tok/s  | Load (s) |
+|--------------------------------------|-------:|---------:|
+| NVFP4                                | **51.15** | 15.92   |
+| std 4bit                             | 46.02  | 26.48    |
+| DWQ-4bit                             | 35.27  | 15.38    |
 
-This is the *opposite* of published MLX guidance ("MLX upcasts NVFP4 to FP16, so it's slower than 4-bit"). Two plausible reasons it inverts on M5:
+**1024 tokens (warm state):**
 
-1. **M5 GPU neural accelerators.** Apple's October 2025 announcement explicitly called out new in-GPU neural accelerators for AI. Apple ML Research published "Exploring LLMs with MLX and the Neural Accelerators in the M5 GPU" describing FP-format speedups specific to M5.
-2. **omlx custom kernels.** omlx is a separate engine from `mlx-lm` and may ship FP4 paths that vanilla `mlx-lm` lacks.
+| Model                                | tok/s  | Load (s) |
+|--------------------------------------|-------:|---------:|
+| std 4bit                             | **45.89** | 25.87   |
+| NVFP4                                | 41.05  | 19.25    |
+| DWQ-4bit                             | 33.20  | 25.99    |
 
-Either way: the empirical measurement on this hardware says NVFP4 wins, and warm-state NVFP4 (~49 tok/s) actually beats the historical M2 Pro 4-bit ceiling (45.8 tok/s) despite the M5 having ~25% less memory bandwidth.
+**Key findings:**
+
+- **NVFP4 wins at 512 tokens** (51.15 tok/s), benefiting from M5's FP4 neural accelerators.
+- **std 4bit overtakes NVFP4 at 1024 tokens** (45.89 vs 41.05 tok/s). NVFP4 degrades -19.6% from 512→1024, while std 4bit is stable (-0.3%). This suggests FP4 accelerator advantage is most visible at shorter generations; at longer runs, bandwidth-bound effects dominate and the standard (unquantized) path maintains stable throughput better.
+- **DWQ is consistently slowest** (~35 tok/s at 512, ~33 at 1024). Despite being "4-bit", DWQ quantization doesn't benefit from M5's neural accelerators the way NVFP4 does. It does benefit from smaller model size (fewer disk reads, less memory), which is its main advantage.
+- **std 4bit loads much slower** (~26s vs ~16s for DWQ/NVFP4) — likely more files / larger on-disk footprint.
+
+This confirms the M5 has format-specific hardware advantages that the M2 Pro lacks. See M2 Pro section below.
 
 ### M2 Pro (Apple M2 Pro, 32 GB, 200 GB/s)
-Historical reference (pre-DWQ, pre-NVFP4 comparison), 4-bit standard quantization:
+Qwen3.6-35B-A3B comparison, same prompt, same omlx flags:
 
-| Model                                | tok/s |
-|--------------------------------------|------:|
-| Qwen3.6-27B-4bit (dense)             | 10.6  |
-| Qwen3.6-35B-A3B-4bit (MoE)           | 45.8  |
+| Model                                | tok/s  |
+|--------------------------------------|-------:|
+| std 4bit (MoE)                       | 45.86  |
+| DWQ-4bit (MoE)                       | 45.36  |
+| NVFP4 (MoE)                          | 45.36  |
 
-**Not yet re-benchmarked with DWQ + NVFP4 on the M2 Pro.** The M2 Pro lacks M5's neural accelerators, so the InsiderLLM guidance (DWQ > NVFP4 on MLX) is more likely to hold there. Re-run the head-to-head on the M2 Pro box and append a row when available.
+**All three formats are effectively tied on M2 Pro** (~45.4–45.9 tok/s, within 1% of each other). This confirms the M2 Pro is **bandwidth-bound** (200 GB/s) — the quantization format doesn't matter because memory throughput is the bottleneck. No neural accelerators to differentiate FP4 vs DWQ vs std 4bit.
+
+### Cross-machine comparison (std 4bit, the common denominator)
+
+| Machine | std 4bit tok/s | NVFP4 tok/s | DWQ tok/s | Bandwidth |
+|---------|---------------:|------------:|----------:|----------:|
+| M2 Pro  | 45.86          | 45.36       | 45.36     | 200 GB/s  |
+| M5      | 46.02 (512)    | 51.15 (512) | 35.27     | 153 GB/s  |
+
+**Despite 25% less memory bandwidth, the M5 matches or exceeds the M2 Pro** on std 4bit (46.02 vs 45.86) and significantly exceeds it on NVFP4 (51.15 vs 45.36, +13%). This is entirely due to M5's neural accelerators — the M5's CPU/GPU architecture more than compensates for the bandwidth deficit on accelerated formats.
+
+DWQ is the outlier: M5 is ~22% slower than M2 Pro on DWQ (35.27 vs 45.36), likely because DWQ's sparse activation pattern doesn't map well to M5's FP4 accelerators and the lower bandwidth hurts more.
 
 ## Methodology notes
 

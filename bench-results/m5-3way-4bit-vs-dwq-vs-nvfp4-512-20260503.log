@@ -1,0 +1,15 @@
+Machine: Apple M5, 32 GB, 153 GB/s
+Date: 2026-05-03
+Tool: mlx-bench (omlx sequential benchmark)
+Prompt: "Write a 200-word introduction to quantum computing for a 10-year-old."
+Max tokens: 512
+
+Results:
+  mlx-community__Qwen3.6-35B-A3B-nvfp4      51.15 tok/s  load: 15.92s
+  mlx-community__Qwen3.6-35B-A3B-4bit       46.02 tok/s  load: 26.48s
+  mlx-community__Qwen3.6-35B-A3B-4bit-DWQ   35.27 tok/s  load: 15.38s
+
+Conclusion:
+  NVFP4 wins at 512 tokens, 1.45x DWQ and 1.30x std 4bit.
+  std 4bit loads much slower (26.48s vs ~16s for others) — likely larger file size / more files.
+  DWQ is the slowest at 35.27 tok/s — consistent with previous M5 runs (~31-35 tok/s range).

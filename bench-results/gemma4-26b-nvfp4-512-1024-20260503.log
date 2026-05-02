@@ -1,0 +1,18 @@
+Machine: Apple M5, 32 GB, 153 GB/s
+Date: 2026-05-03
+Tool: mlx-bench (omlx sequential benchmark)
+Prompt: "Write a 200-word introduction to quantum computing for a 10-year-old."
+Note: Gemma 4 is a VLM (Gemma4ForConditionalGeneration). Text-only benchmark CLI
+truncates output due to VLM tool-calling parser. Models generate only ~230-250 tokens
+regardless of max_tokens setting.
+
+Results:
+  mlx-community__gemma-4-26b-a4b-it-nvfp4  37.71 tok/s (512 tokens)  load: 48.24s
+  mlx-community__gemma-4-26b-a4b-it-nvfp4  37.63 tok/s (1024 tokens) load: 9.11s (warm)
+
+Conclusion:
+  Gemma 4-26B NVFP4 generates ~230-250 tokens due to VLM tool-calling behavior.
+  At 512 max: 37.71 tok/s, load 48.24s (cold)
+  At 1024 max: 37.63 tok/s, load 9.11s (warm, model already in memory)
+  VLM tool-calling parser truncates generation early — standard text benchmarks
+  not meaningful for this model via mlx-bench. Results are best-effort only.

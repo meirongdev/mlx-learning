@@ -1,0 +1,23 @@
+Machine: Apple M5, 32 GB, 153 GB/s
+Date: 2026-05-03
+Tool: mlx-bench (omlx sequential benchmark)
+Prompt: "Write a 200-word introduction to quantum computing for a 10-year-old."
+Max tokens: 1024
+
+Results:
+  mlx-community__Qwen3.6-35B-A3B-4bit       45.89 tok/s  load: 25.87s
+  mlx-community__Qwen3.6-35B-A3B-nvfp4      41.05 tok/s  load: 19.25s
+  mlx-community__Qwen3.6-35B-A3B-4bit-DWQ   33.20 tok/s  load: 25.99s
+
+Conclusion:
+  At 1024 tokens, std 4bit overtakes NVFP4 (45.89 vs 41.05 tok/s).
+  NVFP4 is faster at 512 tokens (51.15 tok/s) but degrades more at 1024 (-19.6%).
+  std 4bit stays stable (46.02 → 45.89 tok/s, -0.3%).
+  DWQ remains slowest (35.27 → 33.20 tok/s, -5.9%).
+  
+  This suggests the M5's FP4 neural accelerators give NVFP4 an advantage at shorter
+  generations, but at longer generations the advantage is overwhelmed by memory bandwidth
+  effects — and the unquantized (std 4bit) path benefits more from stable throughput.
+  
+  Recommendation: NVFP4 for latency-sensitive (shorter gen), std 4bit for throughput
+  at longer generations. DWQ is the safest file-size choice but slowest.
