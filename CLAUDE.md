@@ -110,30 +110,53 @@ omlx auto-discovers any model dropped under `models/`. Currently on disk (M5 box
 
 ### Per-machine reference numbers (Qwen3.6-35B-A3B, 512-token gen)
 
-| Machine      | Bandwidth   | Best 4-bit so far | tok/s | Notes |
+#### omlx (default server)
+
+| Machine      | Bandwidth   | Best quant (omlx) | tok/s | Notes |
 |--------------|-------------|-------------------|------:|-------|
 | M2 Pro 32 GB | 200 GB/s    | std 4bit (`mlx-community__Qwen3.6-35B-A3B-4bit`) | **45.89** | 2026-05-03; DWQ=45.36, NVFP4=45.36 — all three tied (bandwidth-bound, no FP4 HW) |
 | M5 32 GB     | 153.6 GB/s  | **NVFP4** (`mlx-community__Qwen3.6-35B-A3B-nvfp4`) | **39.74 cold / 49.14 warm** | DWQ measured 31.33 cold / 32.11 warm; NVFP4 wins by 1.25–1.53× |
 
-The M2 Pro is faster despite being older — bandwidth dominates decode. See `OPTIMIZATION.md` and `bench-results/` for raw logs.
+#### vllm-mlx 0.2.9 (alternative, higher raw tok/s)
+
+| Machine      | Bandwidth   | Best quant (vllm-mlx) | tok/s (512) | tok/s (1024 warm) | Notes |
+|--------------|-------------|----------------------|------------:|------------------:|-------|
+| M2 Pro 32 GB | 200 GB/s    | std 4bit or NVFP4    | **58.13–57.40** | **58.83–58.65** | DWQ only 45–46 tok/s (slow path); +28% vs omlx on non-DWQ |
+| M5 32 GB     | 153.6 GB/s  | NVFP4                | **51.09**       | **52.25**       | DWQ not tested; +5–10% vs omlx |
+
+**M2 Pro is ~12–13% faster than M5 under vllm-mlx** — bandwidth gap fully expressed. Under omlx, M5 NVFP4 warm (~49 tok/s) nearly closes the gap due to FP4 HW kernels; vllm-mlx doesn't exploit those.
+
+**DWQ under vllm-mlx is significantly slower than std 4-bit / NVFP4** (~46 vs ~59 tok/s on M2 Pro). vllm-mlx lacks optimized kernels for DWQ's per-group dequant scheme. Under omlx all three formats are equal on M2 Pro (all bandwidth-bound).
+
+The M2 Pro is faster despite being older — bandwidth dominates decode. See `bench-results/` for raw logs.
 
 ### Alternative server engine: vllm-mlx
 
-`vllm-mlx` (PyPI, by waybarrios) is a vLLM-style OpenAI-compatible server with native MLX backend. Tested 2026-05-03 against omlx, **single-stream, M5 only**:
+`vllm-mlx` (PyPI, by waybarrios) is a vLLM-style OpenAI-compatible server with native MLX backend. Tested 2026-05-03 against omlx on both machines, **single-stream**:
 
-| Run (Qwen3.6-35B-A3B NVFP4) | omlx (tok/s) | vllm-mlx 0.2.9 (tok/s) | Δ |
+**M5, NVFP4:**
+
+| Run | omlx (tok/s) | vllm-mlx 0.2.9 (tok/s) | Δ |
 |---|---:|---:|---:|
 | 512 cold-warm | 46.29 | **51.09** | +10.4% |
 | 1024 cold-warm | 49.74 | **52.25** | +5.0% |
 | 1024 warm | 48.67 | **51.73** | +6.3% |
 
-vllm-mlx wins **5–10%** on Qwen text LLMs. **But it crashes on Gemma 4 26B** (`Gemma4ForConditionalGeneration` → `mlx_vlm` thread/stream bug: `RuntimeError: There is no Stream(gpu, 0) in current thread`). Same bug in both `--mllm` and auto-detected modes; streaming returns empty completions silently. So:
+**M2 Pro, all three quants:**
+
+| Quant | omlx (tok/s) | vllm-mlx (tok/s, 1024 warm) | Δ |
+|---|---:|---:|---:|
+| NVFP4     | 45.36 | **58.65** | +29% |
+| std 4-bit | 45.89 | **58.83** | +28% |
+| DWQ-4bit  | 45.36 | 46.38     | +2%  |
+
+vllm-mlx wins **5–10% on M5** and **~28% on M2 Pro** for std 4-bit / NVFP4. DWQ gains nothing under vllm-mlx (no optimized kernel). **But it crashes on Gemma 4 26B** (`Gemma4ForConditionalGeneration` → `mlx_vlm` thread/stream bug: `RuntimeError: There is no Stream(gpu, 0) in current thread`). Same bug in both `--mllm` and auto-detected modes; streaming returns empty completions silently. So:
 
 - **Keep omlx as default.** Operationally simpler (Homebrew service, lean deps), works on every model class including VLMs.
-- **Use vllm-mlx selectively** for Qwen-class text LLMs when batching / tool-calling parsers / KV-cache quantization / speculative decoding matter.
-- **M2 Pro vllm-mlx bench: pending** (TODO 2026-05+). Expectation: gap shrinks because M2 Pro is more bandwidth-bound and both engines hit the same ceiling.
+- **Use vllm-mlx selectively** for Qwen-class text LLMs with std 4-bit or NVFP4 when max throughput matters.
+- **Avoid DWQ with vllm-mlx** — no speed benefit, negates the vllm-mlx advantage.
 
-Full report + raw logs: `bench-results/m5-omlx-vs-vllm-mlx-nvfp4-20260503.md`. Trying it:
+Full reports + raw logs: `bench-results/m5-omlx-vs-vllm-mlx-nvfp4-20260503.md`, `bench-results/m2pro-omlx-vs-vllm-mlx-20260503.md`. Trying it:
 
 ```bash
 uv tool install vllm-mlx                 # installs into ~/.local/share/uv/tools (~2.5 GB; pulls in PyTorch)

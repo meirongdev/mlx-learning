@@ -1,0 +1,16 @@
+=== Run 1: 512 tokens (cold-warm) ===
+──────────────────────────────── omlx Benchmark ────────────────────────────────
+────────────────── [1/1] mlx-community__Qwen3.6-35B-A3B-nvfp4 ──────────────────
+Loaded/warmed in 1.92s
+--- Testing omlx: mlx-community__Qwen3.6-35B-A3B-nvfp4 @ http://127.0.0.1:8000 
+---
+Generated Tokens: 512
+Duration: 8.92s
+Tokens/sec (wall clock): 57.40
+────────────────────────────── Comparison Result ───────────────────────────────
+                     Performance Comparison                     
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━┓
+┃ Model                                ┃ Tokens/sec ┃ Load (s) ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━┩
+│ mlx-community__Qwen3.6-35B-A3B-nvfp4 │      57.40 │     1.92 │
+└──────────────────────────────────────┴────────────┴──────────┘

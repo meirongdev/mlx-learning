@@ -1,0 +1,32 @@
+=== DWQ: 1024 tokens warm1 ===
+──────────────────────────────── omlx Benchmark ────────────────────────────────
+──────────────── [1/1] mlx-community__Qwen3.6-35B-A3B-4bit-DWQ ─────────────────
+Loaded/warmed in 0.25s
+--- Testing omlx: mlx-community__Qwen3.6-35B-A3B-4bit-DWQ @ 
+http://127.0.0.1:8000 ---
+Generated Tokens: 1024
+Duration: 22.11s
+Tokens/sec (wall clock): 46.31
+────────────────────────────── Comparison Result ───────────────────────────────
+                      Performance Comparison                       
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━┓
+┃ Model                                   ┃ Tokens/sec ┃ Load (s) ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━┩
+│ mlx-community__Qwen3.6-35B-A3B-4bit-DWQ │      46.31 │     0.25 │
+└─────────────────────────────────────────┴────────────┴──────────┘
+=== DWQ: 1024 tokens warm2 ===
+──────────────────────────────── omlx Benchmark ────────────────────────────────
+──────────────── [1/1] mlx-community__Qwen3.6-35B-A3B-4bit-DWQ ─────────────────
+Loaded/warmed in 0.26s
+--- Testing omlx: mlx-community__Qwen3.6-35B-A3B-4bit-DWQ @ 
+http://127.0.0.1:8000 ---
+Generated Tokens: 1024
+Duration: 22.08s
+Tokens/sec (wall clock): 46.38
+────────────────────────────── Comparison Result ───────────────────────────────
+                      Performance Comparison                       
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━┓
+┃ Model                                   ┃ Tokens/sec ┃ Load (s) ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━┩
+│ mlx-community__Qwen3.6-35B-A3B-4bit-DWQ │      46.38 │     0.26 │
+└─────────────────────────────────────────┴────────────┴──────────┘

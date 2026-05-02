@@ -1,0 +1,16 @@
+=== DWQ: 512 tokens ===
+──────────────────────────────── omlx Benchmark ────────────────────────────────
+──────────────── [1/1] mlx-community__Qwen3.6-35B-A3B-4bit-DWQ ─────────────────
+Loaded/warmed in 1.92s
+--- Testing omlx: mlx-community__Qwen3.6-35B-A3B-4bit-DWQ @ 
+http://127.0.0.1:8000 ---
+Generated Tokens: 512
+Duration: 11.16s
+Tokens/sec (wall clock): 45.88
+────────────────────────────── Comparison Result ───────────────────────────────
+                      Performance Comparison                       
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━┓
+┃ Model                                   ┃ Tokens/sec ┃ Load (s) ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━┩
+│ mlx-community__Qwen3.6-35B-A3B-4bit-DWQ │      45.88 │     1.92 │
+└─────────────────────────────────────────┴────────────┴──────────┘

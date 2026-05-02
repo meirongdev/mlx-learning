@@ -1,0 +1,16 @@
+=== std 4bit: 512 tokens ===
+──────────────────────────────── omlx Benchmark ────────────────────────────────
+────────────────── [1/1] mlx-community__Qwen3.6-35B-A3B-4bit ───────────────────
+Loaded/warmed in 0.69s
+--- Testing omlx: mlx-community__Qwen3.6-35B-A3B-4bit @ http://127.0.0.1:8000 
+---
+Generated Tokens: 512
+Duration: 8.81s
+Tokens/sec (wall clock): 58.13
+────────────────────────────── Comparison Result ───────────────────────────────
+                    Performance Comparison                     
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━┓
+┃ Model                               ┃ Tokens/sec ┃ Load (s) ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━┩
+│ mlx-community__Qwen3.6-35B-A3B-4bit │      58.13 │     0.69 │
+└─────────────────────────────────────┴────────────┴──────────┘
