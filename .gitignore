@@ -75,3 +75,6 @@ omlx-server.pid
 omlx-server.log
 vllm-mlx.log
 vllm-mlx.pid
+vllm-server.pid
+vllm-server.log
+bench-results/vllm-mlx-server-*.log
