@@ -1,0 +1,15 @@
+──────────────────────────────── omlx Benchmark ────────────────────────────────
+──────────────── [1/1] mlx-community__gemma-4-26b-a4b-it-nvfp4 ─────────────────
+Loaded/warmed in 8.92s
+--- Testing omlx: mlx-community__gemma-4-26b-a4b-it-nvfp4 @ 
+http://127.0.0.1:8000 ---
+Generated Tokens: 222
+Duration: 5.80s
+Tokens/sec (wall clock): 38.27
+────────────────────────────── Comparison Result ───────────────────────────────
+                      Performance Comparison                       
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━┓
+┃ Model                                   ┃ Tokens/sec ┃ Load (s) ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━┩
+│ mlx-community__gemma-4-26b-a4b-it-nvfp4 │      38.27 │     8.92 │
+└─────────────────────────────────────────┴────────────┴──────────┘

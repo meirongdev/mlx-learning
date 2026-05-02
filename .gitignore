@@ -73,3 +73,5 @@ mlx-proxy.pid
 mlx-proxy.log
 omlx-server.pid
 omlx-server.log
+vllm-mlx.log
+vllm-mlx.pid

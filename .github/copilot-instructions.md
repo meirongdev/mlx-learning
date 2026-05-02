@@ -36,6 +36,10 @@ The Makefile derives `MODEL_DIR` as `models/<repo-with-/-replaced-by-__>`. omlx 
 
 DWQ ("Dynamic Weight Quantization") is the published-best 4-bit MLX quant as of early 2026. **However, on the M5 box** an empirical run (2026-05-03, `bench-results/`) shows NVFP4 ~25% faster than DWQ for `Qwen3.6-35B-A3B` (39.74 vs 31.33 tok/s @ 512), likely due to M5's GPU neural accelerators and/or omlx-specific FP4 paths. Treat the DWQ default as "the safe fallback" and override to `mlx-community/Qwen3.6-35B-A3B-nvfp4` when running on M5 if tok/s matters. The M2 Pro box has not been re-measured; conventional guidance (DWQ > NVFP4) likely still applies there.
 
+## Alternative server engine: vllm-mlx
+
+`vllm-mlx` (PyPI, `uv tool install vllm-mlx`) is a vLLM-style OpenAI-compatible MLX server tested on this repo on 2026-05-03 (M5 only — M2 Pro pending). On Qwen3.6-35B-A3B NVFP4, it's **5–10% faster** than omlx at single-stream decode (51–52 vs 48–50 tok/s). **It crashes on Gemma 4 VLM** in 0.2.9 (`mlx_vlm` thread/stream bug). Default remains omlx because it's operationally simpler and works on every model class. Use vllm-mlx selectively for Qwen-class text LLMs when continuous batching, tool/reasoning parsers, KV-cache quantization, or speculative decoding matter. Full bench + flag map: `bench-results/m5-omlx-vs-vllm-mlx-nvfp4-20260503.md`.
+
 ## High-level architecture
 
 - **Benchmark CLI** — `src/mlx_learning/benchmark_cli.py` exposes the `mlx-bench` Typer command (registered via `[project.scripts]`). It loads MLX models via `mlx_lm.load`/`mlx_lm.generate` locally and posts to omlx at `http://127.0.0.1:8000/v1/chat/completions` to compare tokens/sec.

@@ -1,0 +1,90 @@
+INFO:vllm_mlx.utils.mamba_cache:[MambaCache] Skipping _make_cache patch — mlx-lm ArraysCache has native batching support
+INFO:vllm_mlx.utils.download:Model found at local path: models/mlx-community__gemma-4-26b-a4b-it-4bit
+INFO:vllm_mlx.server:Loading model with SimpleEngine: ./models/mlx-community__gemma-4-26b-a4b-it-4bit
+INFO:vllm_mlx.models.mllm:Loading MLLM: ./models/mlx-community__gemma-4-26b-a4b-it-4bit
+ERROR:root:No safetensors found in models/mlx-community__gemma-4-26b-a4b-it-4bit
+ERROR:vllm_mlx.models.mllm:Failed to load MLLM: 
+No safetensors found in models/mlx-community__gemma-4-26b-a4b-it-4bit
+Create safetensors using the following code:
+```
+from transformers import AutoModelForCausalLM, AutoProcessor
+
+model_id= "<huggingface_model_id>"
+model = AutoModelForCausalLM.from_pretrained(model_id)
+processor = AutoProcessor.from_pretrained(model_id)
+
+model.save_pretrained("<local_dir>")
+processor.save_pretrained("<local_dir>")
+```
+Then use the <local_dir> as the --hf-path in the convert script.
+```
+python -m mlx_vlm.convert --hf-path <local_dir> --mlx-path <mlx_dir>
+```
+        
+============================================================
+SECURITY CONFIGURATION
+============================================================
+  Authentication: DISABLED - Use --api-key to enable
+  Rate limiting: DISABLED - Use --rate-limit to enable
+  Request timeout: 300.0s
+  Metrics: DISABLED - Use --enable-metrics to expose /metrics
+  Remote code loading: DISABLED (default)
+  Tool calling: Use --enable-auto-tool-choice to enable
+  Reasoning: Use --reasoning-parser to enable
+  Audio upload limit: 25 MiB, TTS input limit: 4096 chars
+============================================================
+Loading model: ./models/mlx-community__gemma-4-26b-a4b-it-4bit
+Default max tokens: 32768
+Max request tokens: 32768
+Mode: Simple (maximum throughput)
+Traceback (most recent call last):
+  File "/Users/matthew/.local/bin/vllm-mlx", line 8, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/Users/matthew/.local/share/uv/tools/vllm-mlx/lib/python3.13/site-packages/vllm_mlx/cli.py", line 1440, in main
+    serve_command(args)
+    ~~~~~~~~~~~~~^^^^^^
+  File "/Users/matthew/.local/share/uv/tools/vllm-mlx/lib/python3.13/site-packages/vllm_mlx/cli.py", line 254, in serve_command
+    load_model(
+    ~~~~~~~~~~^
+        args.model,
+        ^^^^^^^^^^^
+    ...<15 lines>...
+        warm_prompts_path=args.warm_prompts,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/matthew/.local/share/uv/tools/vllm-mlx/lib/python3.13/site-packages/vllm_mlx/server.py", line 1858, in load_model
+    loop.run_until_complete(_engine.start())
+    ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/matthew/.local/share/uv/python/cpython-3.13.7-macos-aarch64-none/lib/python3.13/asyncio/base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "/Users/matthew/.local/share/uv/tools/vllm-mlx/lib/python3.13/site-packages/vllm_mlx/engine/simple.py", line 158, in start
+    self._model.load()
+    ~~~~~~~~~~~~~~~~^^
+  File "/Users/matthew/.local/share/uv/tools/vllm-mlx/lib/python3.13/site-packages/vllm_mlx/models/mllm.py", line 811, in load
+    self.model, self.processor = load(self.model_name)
+                                 ~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/matthew/.local/share/uv/tools/vllm-mlx/lib/python3.13/site-packages/mlx_vlm/utils.py", line 403, in load
+    model = load_model(model_path, lazy, **kwargs)
+  File "/Users/matthew/.local/share/uv/tools/vllm-mlx/lib/python3.13/site-packages/mlx_vlm/utils.py", line 214, in load_model
+    raise FileNotFoundError(message)
+FileNotFoundError: 
+No safetensors found in models/mlx-community__gemma-4-26b-a4b-it-4bit
+Create safetensors using the following code:
+```
+from transformers import AutoModelForCausalLM, AutoProcessor
+
+model_id= "<huggingface_model_id>"
+model = AutoModelForCausalLM.from_pretrained(model_id)
+processor = AutoProcessor.from_pretrained(model_id)
+
+model.save_pretrained("<local_dir>")
+processor.save_pretrained("<local_dir>")
+```
+Then use the <local_dir> as the --hf-path in the convert script.
+```
+python -m mlx_vlm.convert --hf-path <local_dir> --mlx-path <mlx_dir>
+```
+        

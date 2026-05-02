@@ -75,6 +75,22 @@ Qwen3.6-35B-A3B comparison, same prompt, same omlx flags:
 
 DWQ is the outlier: M5 is ~22% slower than M2 Pro on DWQ (35.27 vs 45.36), likely because DWQ's sparse activation pattern doesn't map well to M5's FP4 accelerators and the lower bandwidth hurts more.
 
+### Server engine: omlx vs vllm-mlx (M5)
+
+(2026-05-03, Qwen3.6-35B-A3B NVFP4, single-stream, vllm-mlx flags matched to omlx config — see `m5-omlx-vs-vllm-mlx-nvfp4-20260503.md` for the flag map.)
+
+| Run | omlx (tok/s) | vllm-mlx 0.2.9 (tok/s) | Δ |
+|---|---:|---:|---:|
+| 512 cold-warm | 46.29 | **51.09** | +10.4% |
+| 1024 cold-warm | 49.74 | **52.25** | +5.0% |
+| 1024 warm | 48.67 | **51.73** | +6.3% |
+
+vllm-mlx is **5–10% faster** on text LLMs and stays ahead but converges as warmup completes — the steady-state ceiling on this M5 is ~52 tok/s (bandwidth-bound for both). The win mostly comes from start-up / paged-cache scheduling, not steady-state kernel efficiency.
+
+**Gemma 4 26B (VLM): vllm-mlx is broken.** Both `--mllm` and auto-detected MLLM paths crash with `RuntimeError: There is no Stream(gpu, 0) in current thread` from `mlx_vlm/generate.py`. Streaming returns empty completions silently. omlx serves Gemma 4 fine at ~38 tok/s. Detailed report and traceback: `m5-omlx-vs-vllm-mlx-nvfp4-20260503.md` + `vllm-mlx-server-logs/`.
+
+**M2 Pro: pending.** Re-run the same comparison on the 200 GB/s box; expectation is that the gap shrinks because M2 Pro is more bandwidth-bound and both engines hit the same ceiling.
+
 ## Methodology notes
 
 - **Prefill is included in tok/s.** `mlx-bench` measures wall-clock from request → response, so the published number includes prompt processing. With the default ~30-token prompt and 512+ generated tokens, prefill is a small share (<5%).

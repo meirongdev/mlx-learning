@@ -117,6 +117,37 @@ omlx auto-discovers any model dropped under `models/`. Currently on disk (M5 box
 
 The M2 Pro is faster despite being older — bandwidth dominates decode. See `OPTIMIZATION.md` and `bench-results/` for raw logs.
 
+### Alternative server engine: vllm-mlx
+
+`vllm-mlx` (PyPI, by waybarrios) is a vLLM-style OpenAI-compatible server with native MLX backend. Tested 2026-05-03 against omlx, **single-stream, M5 only**:
+
+| Run (Qwen3.6-35B-A3B NVFP4) | omlx (tok/s) | vllm-mlx 0.2.9 (tok/s) | Δ |
+|---|---:|---:|---:|
+| 512 cold-warm | 46.29 | **51.09** | +10.4% |
+| 1024 cold-warm | 49.74 | **52.25** | +5.0% |
+| 1024 warm | 48.67 | **51.73** | +6.3% |
+
+vllm-mlx wins **5–10%** on Qwen text LLMs. **But it crashes on Gemma 4 26B** (`Gemma4ForConditionalGeneration` → `mlx_vlm` thread/stream bug: `RuntimeError: There is no Stream(gpu, 0) in current thread`). Same bug in both `--mllm` and auto-detected modes; streaming returns empty completions silently. So:
+
+- **Keep omlx as default.** Operationally simpler (Homebrew service, lean deps), works on every model class including VLMs.
+- **Use vllm-mlx selectively** for Qwen-class text LLMs when batching / tool-calling parsers / KV-cache quantization / speculative decoding matter.
+- **M2 Pro vllm-mlx bench: pending** (TODO 2026-05+). Expectation: gap shrinks because M2 Pro is more bandwidth-bound and both engines hit the same ceiling.
+
+Full report + raw logs: `bench-results/m5-omlx-vs-vllm-mlx-nvfp4-20260503.md`. Trying it:
+
+```bash
+uv tool install vllm-mlx                 # installs into ~/.local/share/uv/tools (~2.5 GB; pulls in PyTorch)
+make omlx-stop                            # free port 8000
+vllm-mlx serve ./models/mlx-community__Qwen3.6-35B-A3B-nvfp4 \
+  --served-model-name mlx-community__Qwen3.6-35B-A3B-nvfp4 \
+  --host 0.0.0.0 --port 8000 \
+  --gpu-memory-utilization 0.90 --cache-memory-mb 4096 \
+  --max-num-seqs 2 --use-paged-cache --max-cache-blocks 1024
+# bench: uv run mlx-bench mlx-community__Qwen3.6-35B-A3B-nvfp4 --max-tokens 1024 --no-unload
+```
+
+omlx flag → vllm-mlx flag map: `--max-process-memory 90%` → `--gpu-memory-utilization 0.90`; `--hot-cache-max-size 4GB` → `--cache-memory-mb 4096`; `--max-concurrent-requests 2` → `--max-num-seqs 2`; `--initial-cache-blocks 1024` → `--use-paged-cache --max-cache-blocks 1024`. Use `--no-unload` with `mlx-bench` because vllm-mlx has no per-model unload endpoint.
+
 ## Architecture
 
 Two independent layers:
