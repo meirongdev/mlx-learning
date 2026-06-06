@@ -112,6 +112,7 @@ omlx auto-discovers any model dropped under `models/`. Currently on disk (M5 box
 | `mlx-community__Qwen3.6-35B-A3B-4bit-DWQ`           | DWQ-4bit     | ~19 GB | 256k    | Repo default; M2 Pro: 45.36 tok/s; on M5: 31.33 tok/s (slower than NVFP4) |
 | `mlx-community__Qwen3.6-35B-A3B-4bit`               | std 4bit     | ~19 GB | 256k    | M2 Pro: **45.89 tok/s** (marginally fastest on M2 Pro) |
 | `mlx-community__gemma-4-26b-a4b-it-nvfp4`           | NVFP4        | ~15 GB | 128k    | Smaller alt; not benchmarked here |
+| `mlx-community__gemma-4-26B-A4B-it-qat-nvfp4`       | QAT NVFP4    | ~15 GB | 128k    | Gemma 4 VLM; runs on **vllm-mlx 0.3.0+** (M5: ~30 tok/s @ 512/1024); QAT = better quality at 4-bit. Crashed on vllm-mlx 0.2.9 |
 
 **Why A3B MoE instead of a dense 27B?** Apple-Silicon decode is memory-bandwidth bound: the active-weight footprint per token determines `tok/s`. Measured on M2 Pro: Qwen3.6-27B dense = 10.6 tok/s, Qwen3.6-35B-A3B = 45.8 tok/s (~4.3× faster, with a larger/stronger model). Anything under ~16 GB of *active* weights is the ceiling for this class of machine.
 
@@ -159,10 +160,10 @@ The M2 Pro is faster despite being older — bandwidth dominates decode. See `be
 | std 4-bit | 45.89 | **58.83** | +28% |
 | DWQ-4bit  | 45.36 | 46.38     | +2%  |
 
-vllm-mlx wins **5–10% on M5** and **~28% on M2 Pro** for std 4-bit / NVFP4. DWQ gains nothing under vllm-mlx (no optimized kernel). **But it crashes on Gemma 4 26B** (`Gemma4ForConditionalGeneration` → `mlx_vlm` thread/stream bug: `RuntimeError: There is no Stream(gpu, 0) in current thread`). Same bug in both `--mllm` and auto-detected modes; streaming returns empty completions silently. So:
+vllm-mlx wins **5–10% on M5** and **~28% on M2 Pro** for std 4-bit / NVFP4. DWQ gains nothing under vllm-mlx (no optimized kernel). **Gemma 4 26B (`Gemma4ForConditionalGeneration`) crashed on vllm-mlx 0.2.9** (`mlx_vlm` thread/stream bug: `RuntimeError: There is no Stream(gpu, 0) in current thread`; both `--mllm` and auto-detected modes; streaming returned empty completions silently) — **fixed in vllm-mlx 0.3.0**. Re-tested 2026-06-07 on M5 with `mlx-community/gemma-4-26B-A4B-it-qat-nvfp4`: both streaming and non-streaming generate correctly (~30 tok/s @ 512, 29.7 warm @ 1024). 0.3.0 release notes now explicitly list Gemma 3/4 as supported vision models. A non-fatal `Failed to build TextModel from vlm: float division by zero` warning at load falls back to the full VLM path and does not block generation. So:
 
 - **Keep omlx as default.** Operationally simpler (Homebrew service, lean deps), works on every model class including VLMs.
-- **Use vllm-mlx selectively** for Qwen-class text LLMs with std 4-bit or NVFP4 when max throughput matters.
+- **Use vllm-mlx selectively** for Qwen-class text LLMs with std 4-bit or NVFP4 when max throughput matters. Gemma 4 26B also runs on **vllm-mlx 0.3.0+** (M5: ~30 tok/s, qat-nvfp4) — but it's slower than Qwen3.6-35B-A3B (~51 tok/s) because Gemma's ~4B-active VLM path is heavier than the 3B-active Qwen MoE; for Gemma, omlx stays comparable and simpler.
 - **Avoid DWQ with vllm-mlx** — no speed benefit, negates the vllm-mlx advantage.
 
 Full reports + raw logs: `bench-results/m5-omlx-vs-vllm-mlx-nvfp4-20260503.md`, `bench-results/m2pro-omlx-vs-vllm-mlx-20260503.md`. Trying it:
