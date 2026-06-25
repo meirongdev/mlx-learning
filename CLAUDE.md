@@ -127,7 +127,7 @@ omlx auto-discovers any model dropped under `models/`. Currently on disk (M5 box
 | M2 Pro 32 GB | 200 GB/s    | std 4bit (`mlx-community__Qwen3.6-35B-A3B-4bit`) | **45.89** | 2026-05-03; DWQ=45.36, NVFP4=45.36 — all three tied (bandwidth-bound, no FP4 HW) |
 | M5 32 GB     | 153.6 GB/s  | **NVFP4** (`mlx-community__Qwen3.6-35B-A3B-nvfp4`) | **39.74 cold / 49.14 warm** | DWQ measured 31.33 cold / 32.11 warm; NVFP4 wins by 1.25–1.53× |
 
-#### vllm-mlx 0.2.9 (alternative, higher raw tok/s)
+#### vllm-mlx 0.3.0 (alternative, higher raw tok/s)
 
 | Machine      | Bandwidth   | Best quant (vllm-mlx) | tok/s (512) | tok/s (1024 warm) | Notes |
 |--------------|-------------|----------------------|------------:|------------------:|-------|

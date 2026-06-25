@@ -1,109 +1,113 @@
-# Qwen Code Context — MLX Learning & Benchmark
+# QWEN.md — mlx-learning Project Context
 
-## Project Overview
+## What This Is
 
-A toolkit for benchmarking and serving MLX-based LLMs on Apple Silicon, served via the [omlx](https://github.com/omlx/omlx) multi-model OpenAI-compatible server. The primary use case is comparing generation speed between local MLX inference and omlx on the same machine.
+A toolkit for benchmarking and serving MLX-based LLMs on Apple Silicon. Primary use case: comparing generation speed between local MLX inference and a local inference server on the same machine.
 
-**Stack:** Python 3.11+ — `mlx`, `mlx-lm`, `mlx-vlm`, `typer`, `rich`, `openai` — served via `omlx` (installed via brew).
+**Host machine:** Apple M5 (base), 32 GB unified memory, 153.6 GB/s bandwidth.
 
-**Default model:** `mlx-community/Qwen3.6-35B-A3B-4bit-DWQ` (MoE, 35B total / 3B active, DWQ-4bit, 256k context). DWQ is the published-best 4-bit MLX quant. **However on the M5 box** NVFP4 measured ~25% faster (39.74 vs 31.33 tok/s @ 512, see `bench-results/`) — likely M5's GPU neural accelerators or omlx-specific FP4 paths. Override `MODEL_REPO=mlx-community/Qwen3.6-35B-A3B-nvfp4` on M5 when tok/s matters. M2 Pro has not yet been re-measured.
+**Default model:** `mlx-community/Qwen3.6-35B-A3B-nvfp4` (MoE, 35B total / 3B active, NVFP4, 256k context). On M5 with omlx: ~49 tok/s warm.
 
-## Hosts
-
-This repo runs on two Macs (both 32 GB unified memory):
-
-| Machine    | Chip            | Bandwidth   |
-|------------|-----------------|-------------|
-| M2 Pro MBP | Apple M2 Pro    | 200 GB/s    |
-| M5 MBP 14" | Apple M5 (base) | 153.6 GB/s  |
-
-Run `make detect-machine` (or `bash scripts/detect_machine.sh`) before any download/serve/benchmark — outputs chip, RAM, bandwidth, and the GPU wired-memory limit.
+**Active server on M5:** omlx (OpenAI-compatible, port 8000). vllm-mlx also available (shares port 8000 — stop one before starting the other).
 
 ## Architecture
 
-Two independent layers:
-
-1. **Benchmark CLI** (`src/mlx_learning/benchmark_cli.py`) — registered as `mlx-bench`. Loads MLX models via `mlx_lm.load`/`mlx_lm.generate` locally and posts to omlx (`localhost:8000`) to compare tokens/sec.
-
-2. **omlx multi-model server** (Makefile-driven) — serves all models auto-discovered under `models/`. Exposes `/v1/chat/completions`, `/v1/models`, and related OpenAI-compatible endpoints. State tracked via `omlx-server.pid` / `omlx-server.log` (gitignored).
-
-## Building and Running
-
-### Prerequisites
-
-- macOS on Apple Silicon (M1/M2/M3/M4) — MLX does not support Intel Macs
-- `uv` (for Python environment management) — auto-installed by `make quickstart`
-- `omlx` — install via Homebrew tap:
-  ```bash
-  brew tap jundot/omlx https://github.com/jundot/omlx
-  brew install omlx
-  # Upgrade: brew update && brew upgrade omlx
-  # Run as service: brew services start omlx
-  ```
-- `HF_TOKEN` env var (optional — the default Qwen model is public)
-
-### Quickstart (one command)
-
-```bash
-make quickstart                  # scripts/bootstrap.sh: platform check -> uv -> deps -> model -> omlx -> health check
-make quickstart PORT=8080                                         # PORT/HOST/MODEL_REPO overridable
-```
-
-Idempotent — safe to re-run. `SKIP_SERVER=1` halts after the model download.
-
-### Development commands
-
-```bash
-uv sync                          # install base deps
-uv sync --extra server           # + huggingface_hub, mlx-vlm (for serving)
-uv run pytest                    # run tests
-uv run ruff check .              # lint
-uv run ruff format .             # format
-uv run mypy .                    # type check (strict mode)
-uv run mlx-bench                 # benchmark MLX vs omlx
-```
-
-### Serving with omlx
-
-```bash
-make server-install              # install server deps (mlx-lm, mlx-vlm, hf_hub)
-make model-download              # download default model into models/
-make omlx-start                  # start omlx on 0.0.0.0:8000
-make omlx-status                 # check server PID, port, model info
-make omlx-logs                   # tail the log
-make omlx-stop                   # stop the server
-```
-
-Switch models: `make model-download MODEL_REPO=mlx-community/Qwen3-30B-A3B-4bit`
-
-### Serve with mlx-lm directly (legacy)
-
-```bash
-make server-start                # starts mlx_lm.server on HOST:PORT (default :5001)
-make server-stop
-make server-status
-make server-logs
-make proxy-start                 # OpenAI-compat proxy shim on :5101 -> MLX server
-make proxy-stop
-```
-
-## Development Conventions
-
-- **uv + Makefile** are the canonical workflows. Do not introduce ad hoc `pip` flows.
-- **src/ layout** — new CLIs go in `[project.scripts]` via `pyproject.toml`, not as top-level scripts.
-- **Model naming** — `models/<repo-with-/-replaced-by-__>` (e.g., `models/mlx-community__Qwen3.6-35B-A3B-4bit-DWQ/`). Preserves multi-model coexistence.
-- **mypy strict** with `ignore_missing_imports = true` (MLX/mlx-lm lack type stubs).
-- **Tests are minimal** — only `tests/test_hello.py` covers `mlx_learning.hello.main()`.
-- **PID/log files** (`omlx-server.pid`, `omlx-server.log`) live at repo root and are gitignored.
+| Layer | What | How |
+|-------|------|-----|
+| **Benchmark CLI** | `mlx-bench` — compares MLX vs server tok/s | `src/mlx_learning/benchmark_cli.py`, registered as `[project.scripts]` entry point |
+| **Inference server** | OpenAI-compatible on `:8000` | omlx (`omlx serve`) or vllm-mlx (`vllm-mlx serve`), managed via Makefile targets |
+| **Proxy** | OpenAI-compat shim → local MLX server | `scripts/openai_proxy.py` (port 5101) |
+| **Bootstrap** | Idempotent one-click setup | `scripts/bootstrap.sh` (driven by `make quickstart`) |
+| **Machine detect** | Identifies chip/RAM/bandwidth | `scripts/detect_machine.sh` (used by bootstrap, make targets) |
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
 | `pyproject.toml` | Project metadata, deps, entry points, tool configs (ruff, mypy, pytest) |
-| `Makefile` | Full lifecycle: quickstart, install, download, server, proxy, omlx, bench |
-| `scripts/bootstrap.sh` | Idempotent one-click setup driven by `make quickstart` |
+| `Makefile` | Full lifecycle: quickstart, install, download, server, proxy, omlx, vllm |
 | `src/mlx_learning/benchmark_cli.py` | `mlx-bench` Typer CLI with `test_mlx`, `test_omlx`, `benchmark` |
-| `scripts/openai_proxy.py` | OpenAI-compatible proxy forwarding to a local MLX server |
+| `src/mlx_learning/hello.py` | Minimal module (tested by `tests/test_hello.py`) |
+| `scripts/bootstrap.sh` | Idempotent setup: platform check → uv → deps → model → server → health |
+| `scripts/detect_machine.sh` | Chip/RAM/bandwidth detection; `--quiet` (KEY=VALUE) and `--check=M5` modes |
+| `scripts/openai_proxy.py` | OpenAI-compatible proxy forwarding to local MLX server |
 | `scripts/verify_model.py` | Local `config.json` inspector for downloaded models |
 | `models/` | Downloaded model snapshots (gitignored) |
+
+## Build & Run Commands
+
+### Quickstart
+```bash
+make quickstart                  # full bootstrap (idempotent)
+make quickstart PORT=8080        # override defaults
+SKIP_SERVER=1 make quickstart    # stop after model download
+```
+
+### Development
+```bash
+uv sync                          # install deps
+uv sync --extra server           # + huggingface_hub, mlx-vlm
+uv run pytest                    # tests
+uv run ruff check .              # lint
+uv run ruff format .             # format
+uv run mypy .                    # type check (strict)
+uv run mlx-bench                 # benchmark MLX vs local server
+```
+
+### Serving (omlx — M5 default)
+```bash
+make omlx-start                  # start on 0.0.0.0:8000
+make omlx-status                 # check PID, port, model
+make omlx-logs                   # tail log
+make omlx-stop                   # stop server
+```
+
+### Serving (vllm-mlx — alternative)
+```bash
+make vllm-start                  # start on 0.0.0.0:8000 (stop omlx first)
+make vllm-status / logs / stop
+make vllm-bench                  # benchmark against vllm-mlx
+```
+
+### Serving (mlx_lm.server — legacy)
+```bash
+make server-start                # port 5001 (default)
+make server-status / logs / stop
+```
+
+### Model management
+```bash
+make model-download              # download MODEL_REPO into models/
+make detect-machine              # print chip/RAM/bandwidth
+make optimize-system             # set GPU wired memory to 30000MB (requires sudo)
+```
+
+## Development Conventions
+
+- **uv + Makefile** are the canonical workflows. No ad hoc `pip` flows.
+- **src/ layout** — new CLIs go in `[project.scripts]` via `pyproject.toml`.
+- **Model naming** — `models/<repo-with-/-replaced-by-__>` (e.g., `models/mlx-community__Qwen3.6-35B-A3B-4bit/`). Preserves multi-model coexistence.
+- **mypy strict** with `ignore_missing_imports = true` (MLX/mlx-lm lack type stubs).
+- **ruff** — double quotes, 88-char line limit, `skip-magic-trailing-comma = false`.
+- **Tests** — minimal coverage; `tests/test_hello.py` tests `mlx_learning.hello.main()`.
+- **PID/log files** — `omlx-server.pid/log`, `vllm-server.pid/log`, `mlx-server.pid/log` at repo root (all gitignored).
+
+## Machine-Aware Behavior
+
+All heavy operations (`model-download`, `omlx-start`, `bench`, `bootstrap`) auto-detect the host chip and print bandwidth info. This matters because:
+- M2 Pro (200 GB/s) beats M5 (153.6 GB/s) for plain decode — bandwidth-bound.
+- M5 has native FP4 GPU accelerators — NVFP4 quantization is significantly faster on M5.
+- Use `make detect-machine` or `bash scripts/detect_machine.sh --quiet` to inspect before running anything.
+
+## Server Endpoints
+
+| Server | Default Port | Endpoint |
+|--------|-------------|----------|
+| omlx | 8000 | `http://127.0.0.1:8000/v1` |
+| vllm-mlx | 8000 | `http://127.0.0.1:8000/v1` |
+| mlx_lm.server | 5001 | `http://127.0.0.1:5001/v1` |
+| OpenAI proxy | 5101 | `http://127.0.0.1:5101/v1` |
+
+## Model Slugs
+
+Model repo names use `__` instead of `/` everywhere (APIs, file paths, configs). E.g., `mlx-community/Qwen3.6-35B-A3B-4bit` → `mlx-community__Qwen3.6-35B-A3B-4bit`.
