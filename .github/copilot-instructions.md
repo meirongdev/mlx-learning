@@ -21,20 +21,26 @@
 
 ```bash
 brew tap jundot/omlx https://github.com/jundot/omlx
+brew trust jundot/omlx             # newer Homebrew refuses untrusted third-party taps
 brew install omlx                  # install
 brew update && brew upgrade omlx   # upgrade to latest
 brew services start omlx           # run as background service
 ```
 
+omlx 0.4.x removed `--max-process-memory`; the Makefile now uses `--memory-guard aggressive` (or `--memory-guard-gb N`) in `OMLX_EXTRA_ARGS`.
+
 ## Default serving target
 
-- `MODEL_REPO=mlx-community/Qwen3.6-35B-A3B-4bit-DWQ` (MoE, 35B total / 3B active per token, DWQ-4bit, 256k context).
-- `OMLX_HOST=0.0.0.0`, `OMLX_PORT=8000`
-- `OMLX_MODEL_DIR=models`
+`MODEL_REPO` is **per-machine** — the Makefile picks it from `scripts/detect_machine.sh` (M5 → Gemma 4, else → Qwen). Override with `MODEL_REPO=... make <target>`.
+
+- **M2 Pro** → `mlx-community/Qwen3.6-35B-A3B-nvfp4` (MoE, 35B total / 3B active, 256k), served by **vllm-mlx**.
+- **M5** → `mlx-community/gemma-4-26B-A4B-it-qat-nvfp4` (Gemma 4 VLM, QAT-NVFP4, 256k), served by **omlx** (switched 2026-06-28). M5's `models/` holds **only** this model — the Qwen dirs + non-QAT Gemma were removed.
+- `VLLM_MODEL_REPO` defaults to `$(MODEL_REPO)`.
+- `OMLX_HOST=0.0.0.0`, `OMLX_PORT=8000`, `OMLX_MODEL_DIR=models`
 
 The Makefile derives `MODEL_DIR` as `models/<repo-with-/-replaced-by-__>`. omlx auto-discovers all model subdirectories under `OMLX_MODEL_DIR`.
 
-DWQ ("Dynamic Weight Quantization") is the published-best 4-bit MLX quant as of early 2026. **However, on the M5 box** an empirical run (2026-05-03, `bench-results/`) shows NVFP4 ~25% faster than DWQ for `Qwen3.6-35B-A3B` (39.74 vs 31.33 tok/s @ 512), likely due to M5's GPU neural accelerators and/or omlx-specific FP4 paths. Treat the DWQ default as "the safe fallback" and override to `mlx-community/Qwen3.6-35B-A3B-nvfp4` when running on M5 if tok/s matters. The M2 Pro box has not been re-measured; conventional guidance (DWQ > NVFP4) likely still applies there.
+On the M5 box, NVFP4 beat DWQ ~25% for `Qwen3.6-35B-A3B` (39.74 vs 31.33 tok/s @ 512; 2026-05-03, `bench-results/`), likely due to M5's GPU neural accelerators and/or omlx FP4 paths. M5 no longer keeps Qwen (Gemma 4 only as of 2026-06-28); if reintroduced, prefer `mlx-community/Qwen3.6-35B-A3B-nvfp4`.
 
 ## Alternative server engine: vllm-mlx
 

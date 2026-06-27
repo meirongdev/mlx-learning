@@ -33,6 +33,7 @@ uv sync --extra server           # + mlx-lm, mlx-vlm, huggingface_hub  (or: make
 
 # omlx (Homebrew tap)
 brew tap jundot/omlx https://github.com/jundot/omlx
+brew trust jundot/omlx           # newer Homebrew refuses untrusted third-party taps
 brew install omlx                # install omlx
 brew update && brew upgrade omlx # upgrade to latest
 brew services start omlx         # run as background service (auto-restarts)
@@ -59,18 +60,25 @@ make omlx-start | omlx-stop | omlx-status | omlx-logs
 
 ## Default serving target
 
+`MODEL_REPO` is **per-machine** — the Makefile picks it from `scripts/detect_machine.sh` (M5 → Gemma 4, everything else → Qwen). Override with `MODEL_REPO=... make <target>`.
+
 | Var            | Value                                                              |
 | -------------- | ------------------------------------------------------------------ |
-| `MODEL_REPO`       | `mlx-community/Qwen3.6-35B-A3B-nvfp4` (MoE, 3B active, 256k ctx) |
-| `MODEL_DIR`        | `models/mlx-community__Qwen3.6-35B-A3B-nvfp4/`                    |
-| `VLLM_MODEL_REPO`  | `mlx-community/Qwen3.6-35B-A3B-nvfp4`                             |
+| `MODEL_REPO` (M2 Pro) | `mlx-community/Qwen3.6-35B-A3B-nvfp4` (MoE, 3B active, 256k ctx) |
+| `MODEL_REPO` (M5)     | `mlx-community/gemma-4-26B-A4B-it-qat-nvfp4` (Gemma 4 VLM, 256k ctx) |
+| `MODEL_DIR`        | `models/<MODEL_REPO with / → __>/` (derived)                    |
+| `VLLM_MODEL_REPO`  | follows `MODEL_REPO` (defaults to `$(MODEL_REPO)`)               |
 | `VLLM_HOST`        | `0.0.0.0`                                                          |
 | `VLLM_PORT`        | `8000`                                                             |
 | `OMLX_HOST`        | `0.0.0.0`                                                          |
 | `OMLX_PORT`        | `8000`                                                             |
 | `OMLX_MODEL_DIR`   | `models`                                                           |
 
-**Active server on M2 Pro: vllm-mlx** (switched 2026-05-03). omlx targets still available for M5 or fallback.
+**Per-machine deployment (2026-06-28):**
+- **M2 Pro → Qwen via vllm-mlx** (switched 2026-05-03).
+- **M5 → Gemma 4 via omlx** (switched 2026-06-28). M5's `models/` now holds **only** `mlx-community__gemma-4-26B-A4B-it-qat-nvfp4` — the 3 Qwen dirs + the non-QAT Gemma were removed.
+
+omlx/vllm-mlx both bind `:8000`; stop one before starting the other.
 
 ### Quantization on this hardware — empirical, not theoretical
 
@@ -85,17 +93,17 @@ Published MLX guidance (early 2026): DWQ-4bit > standard 4bit > NVFP4 / MXFP4, b
 | Warm, 1024 tokens        | **49.14**   | 32.11     |
 
 NVFP4 is 1.25–1.53× faster on M5 — gap widens with warm state. Warm NVFP4 (~49 tok/s) actually beats the historical M2 Pro 4-bit ceiling (45.8 tok/s). Likely cause: M5's GPU neural accelerators (announced Oct 2025) and/or omlx-specific FP4 kernels. So:
-- **M5**: prefer `mlx-community/Qwen3.6-35B-A3B-nvfp4` for tok/s. Repo default `MODEL_REPO=...4bit-DWQ` is conservative; override it on M5.
+- **M5**: among Qwen quants, NVFP4 is fastest. As of 2026-06-28 M5 no longer keeps Qwen (it serves Gemma 4 only) — but if you reintroduce a Qwen on M5, prefer `mlx-community/Qwen3.6-35B-A3B-nvfp4`.
 - **M2 Pro**: not yet re-measured; conventional wisdom (DWQ > NVFP4) likely still holds. Re-test before changing the M2 Pro setup.
 - Raw logs in [`bench-results/`](./bench-results/).
 
 ### Performance Optimization (M-series)
 
-The following optimizations are enabled for `omlx` to maximize throughput for `Qwen3.6-35B-A3B-4bit-DWQ`:
+The following optimizations are enabled for `omlx` to maximize throughput (applies to any served model; M5's current model is `gemma-4-26B-A4B-it-qat-nvfp4`):
 
 - **System-level**: Run `make optimize-system` to raise `iogpu.wired_limit_mb` (current default: `30000`; M5 32 GB box is currently set to `26000`).
 - **omlx flags** (in `Makefile` under `OMLX_EXTRA_ARGS`):
-  - `--max-process-memory 90%`: Cap process to leave headroom for the GUI.
+  - `--memory-guard aggressive`: Allow omlx to use most of memory for throughput, with a guard reserve. **omlx 0.4.x removed `--max-process-memory`** — use `--memory-guard {safe,balanced,aggressive}` (or `--memory-guard-gb N` for a hard ceiling) instead. `aggressive` preserves the old `90%` intent.
   - `--hot-cache-max-size 4GB`: Prefix caching for near-zero latency on repeating prompts.
   - `--max-concurrent-requests 2`: Reduces memory fragmentation.
   - `--initial-cache-blocks 1024`: Pre-allocates KV cache to avoid allocation locks.
@@ -104,19 +112,19 @@ The following optimizations are enabled for `omlx` to maximize throughput for `Q
 
 ### Available Models on omlx
 
-omlx auto-discovers any model dropped under `models/`. Currently on disk (M5 box):
+omlx auto-discovers any model dropped under `models/`. Catalog of known models (the **On disk** column reflects state after the 2026-06-28 M5 cleanup):
 
-| Model dir                                           | Quantization | Size   | Context | Notes |
-|-----------------------------------------------------|--------------|--------|---------|-------|
-| `mlx-community__Qwen3.6-35B-A3B-nvfp4`              | NVFP4        | ~19 GB | 256k    | **Fastest on M5** (39.74 tok/s @ 512); M2 Pro: 45.36 tok/s (no HW advantage) |
-| `mlx-community__Qwen3.6-35B-A3B-4bit-DWQ`           | DWQ-4bit     | ~19 GB | 256k    | Repo default; M2 Pro: 45.36 tok/s; on M5: 31.33 tok/s (slower than NVFP4) |
-| `mlx-community__Qwen3.6-35B-A3B-4bit`               | std 4bit     | ~19 GB | 256k    | M2 Pro: **45.89 tok/s** (marginally fastest on M2 Pro) |
-| `mlx-community__gemma-4-26b-a4b-it-nvfp4`           | NVFP4        | ~15 GB | 128k    | Smaller alt; not benchmarked here |
-| `mlx-community__gemma-4-26B-A4B-it-qat-nvfp4`       | QAT NVFP4    | ~15 GB | 128k    | Gemma 4 VLM; runs on **vllm-mlx 0.3.0+** (M5: ~30 tok/s @ 512/1024); QAT = better quality at 4-bit. Crashed on vllm-mlx 0.2.9 |
+| Model dir                                           | Quantization | Size   | Context | On disk | Notes |
+|-----------------------------------------------------|--------------|--------|---------|---------|-------|
+| `mlx-community__Qwen3.6-35B-A3B-nvfp4`              | NVFP4        | ~19 GB | 256k    | M2 Pro  | **Fastest on M5** (39.74 tok/s @ 512); M2 Pro: 45.36 tok/s (no HW advantage). Removed from M5 2026-06-28 |
+| `mlx-community__Qwen3.6-35B-A3B-4bit-DWQ`           | DWQ-4bit     | ~19 GB | 256k    | M2 Pro  | M2 Pro: 45.36 tok/s; on M5: 31.33 tok/s (slower than NVFP4). Removed from M5 2026-06-28 |
+| `mlx-community__Qwen3.6-35B-A3B-4bit`               | std 4bit     | ~19 GB | 256k    | M2 Pro  | M2 Pro: **45.89 tok/s** (marginally fastest on M2 Pro). Removed from M5 2026-06-28 |
+| `mlx-community__gemma-4-26b-a4b-it-nvfp4`           | NVFP4        | ~15 GB | 256k    | —       | Non-QAT Gemma 4; removed from M5 2026-06-28 |
+| `mlx-community__gemma-4-26B-A4B-it-qat-nvfp4`       | QAT NVFP4    | ~15 GB | 256k    | **M5**  | **M5's only model.** Gemma 4 VLM; runs on omlx (M5 default) and vllm-mlx 0.3.0+ (~30 tok/s @ 512/1024); QAT = better quality at 4-bit. Crashed on vllm-mlx 0.2.9 |
 
 **Why A3B MoE instead of a dense 27B?** Apple-Silicon decode is memory-bandwidth bound: the active-weight footprint per token determines `tok/s`. Measured on M2 Pro: Qwen3.6-27B dense = 10.6 tok/s, Qwen3.6-35B-A3B = 45.8 tok/s (~4.3× faster, with a larger/stronger model). Anything under ~16 GB of *active* weights is the ceiling for this class of machine.
 
-**Qwen3.6 (256k context)**: All Qwen3.x models support 262,144 tokens max context with RoPE scaling. omlx respects model config and automatically loads this context window.
+**256k context**: All Qwen3.x models support 262,144 tokens max context with RoPE scaling. The Gemma 4 QAT model is **also 256k** — `config.json` `text_config.max_position_embeddings=262144` (an earlier note here said 128k; that was wrong). omlx respects model config and automatically loads this context window.
 
 ### Per-machine reference numbers (Qwen3.6-35B-A3B, 512-token gen)
 
@@ -179,7 +187,7 @@ vllm-mlx serve ./models/mlx-community__Qwen3.6-35B-A3B-nvfp4 \
 # bench: uv run mlx-bench mlx-community__Qwen3.6-35B-A3B-nvfp4 --max-tokens 1024 --no-unload
 ```
 
-omlx flag → vllm-mlx flag map: `--max-process-memory 90%` → `--gpu-memory-utilization 0.90`; `--hot-cache-max-size 4GB` → `--cache-memory-mb 4096`; `--max-concurrent-requests 2` → `--max-num-seqs 2`; `--initial-cache-blocks 1024` → `--use-paged-cache --max-cache-blocks 1024`. Use `--no-unload` with `mlx-bench` because vllm-mlx has no per-model unload endpoint.
+omlx flag → vllm-mlx flag map: `--memory-guard aggressive` (was `--max-process-memory 90%` pre-0.4.x) → `--gpu-memory-utilization 0.90`; `--hot-cache-max-size 4GB` → `--cache-memory-mb 4096`; `--max-concurrent-requests 2` → `--max-num-seqs 2`; `--initial-cache-blocks 1024` → `--use-paged-cache --max-cache-blocks 1024`. Use `--no-unload` with `mlx-bench` because vllm-mlx has no per-model unload endpoint.
 
 ## Architecture
 
