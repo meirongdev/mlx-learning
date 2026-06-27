@@ -76,7 +76,7 @@ make omlx-start | omlx-stop | omlx-status | omlx-logs
 
 **Per-machine deployment (2026-06-28):**
 - **M2 Pro → Qwen via vllm-mlx** (switched 2026-05-03).
-- **M5 → Gemma 4 via omlx** (switched 2026-06-28). M5's `models/` now holds **only** `mlx-community__gemma-4-26B-A4B-it-qat-nvfp4` — the 3 Qwen dirs + the non-QAT Gemma were removed.
+- **M5 → Gemma 4 via omlx** (switched 2026-06-28). M5's `models/` holds `mlx-community__gemma-4-26B-A4B-it-qat-nvfp4` (main chat/VLM) plus `mlx-community__Qwen3-Embedding-0.6B-4bit-DWQ` (embeddings, for testing) — the 3 Qwen chat dirs + the non-QAT Gemma were removed.
 
 omlx/vllm-mlx both bind `:8000`; stop one before starting the other.
 
@@ -120,11 +120,21 @@ omlx auto-discovers any model dropped under `models/`. Catalog of known models (
 | `mlx-community__Qwen3.6-35B-A3B-4bit-DWQ`           | DWQ-4bit     | ~19 GB | 256k    | M2 Pro  | M2 Pro: 45.36 tok/s; on M5: 31.33 tok/s (slower than NVFP4). Removed from M5 2026-06-28 |
 | `mlx-community__Qwen3.6-35B-A3B-4bit`               | std 4bit     | ~19 GB | 256k    | M2 Pro  | M2 Pro: **45.89 tok/s** (marginally fastest on M2 Pro). Removed from M5 2026-06-28 |
 | `mlx-community__gemma-4-26b-a4b-it-nvfp4`           | NVFP4        | ~15 GB | 256k    | —       | Non-QAT Gemma 4; removed from M5 2026-06-28 |
-| `mlx-community__gemma-4-26B-A4B-it-qat-nvfp4`       | QAT NVFP4    | ~15 GB | 256k    | **M5**  | **M5's only model.** Gemma 4 VLM; runs on omlx (M5 default) and vllm-mlx 0.3.0+ (~30 tok/s @ 512/1024); QAT = better quality at 4-bit. Crashed on vllm-mlx 0.2.9 |
+| `mlx-community__gemma-4-26B-A4B-it-qat-nvfp4`       | QAT NVFP4    | ~15 GB | 256k    | **M5**  | **M5's main (chat/VLM) model.** Gemma 4 VLM; runs on omlx (M5 default) and vllm-mlx 0.3.0+ (~30 tok/s @ 512/1024); QAT = better quality at 4-bit. Crashed on vllm-mlx 0.2.9 |
+| `mlx-community__Qwen3-Embedding-0.6B-4bit-DWQ`     | DWQ-4bit     | ~0.34 GB | —     | **M5**  | **Embedding model** (1024-dim, multilingual). Added 2026-06-28 for testing `/v1/embeddings`. Cross-lingual sanity check passed (en↔zh cosine ~0.72). |
 
 **Why A3B MoE instead of a dense 27B?** Apple-Silicon decode is memory-bandwidth bound: the active-weight footprint per token determines `tok/s`. Measured on M2 Pro: Qwen3.6-27B dense = 10.6 tok/s, Qwen3.6-35B-A3B = 45.8 tok/s (~4.3× faster, with a larger/stronger model). Anything under ~16 GB of *active* weights is the ceiling for this class of machine.
 
 **256k context**: All Qwen3.x models support 262,144 tokens max context with RoPE scaling. The Gemma 4 QAT model is **also 256k** — `config.json` `text_config.max_position_embeddings=262144` (an earlier note here said 128k; that was wrong). omlx respects model config and automatically loads this context window.
+
+**Embeddings & rerank**: omlx (0.4.x) exposes OpenAI-compatible `/v1/embeddings` and `/v1/rerank` alongside chat. Drop an MLX embedding model under `models/` and `make omlx-restart` (omlx scans the dir at startup, not live). Example:
+
+```bash
+make model-download MODEL_REPO=mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ
+make omlx-restart
+curl -s localhost:8000/v1/embeddings -H 'Content-Type: application/json' \
+  -d '{"model":"mlx-community__Qwen3-Embedding-0.6B-4bit-DWQ","input":["你好","world"]}'
+```
 
 ### Per-machine reference numbers (Qwen3.6-35B-A3B, 512-token gen)
 

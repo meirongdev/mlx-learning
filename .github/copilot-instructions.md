@@ -49,7 +49,7 @@ On the M5 box, NVFP4 beat DWQ ~25% for `Qwen3.6-35B-A3B` (39.74 vs 31.33 tok/s @
 ## High-level architecture
 
 - **Benchmark CLI** — `src/mlx_learning/benchmark_cli.py` exposes the `mlx-bench` Typer command (registered via `[project.scripts]`). It loads MLX models via `mlx_lm.load`/`mlx_lm.generate` locally and posts to omlx at `http://127.0.0.1:8000/v1/chat/completions` to compare tokens/sec.
-- **omlx multi-model server (Makefile-driven)** — production-ready OpenAI-compatible server for Apple Silicon. Serves all models under `models/` with LRU-based memory management. Exposes `/v1/chat/completions`, `/v1/models`, and related endpoints on `:8000`. State tracked via `omlx-server.pid` / `omlx-server.log`.
+- **omlx multi-model server (Makefile-driven)** — production-ready OpenAI-compatible server for Apple Silicon. Serves all models under `models/` with LRU-based memory management. Exposes `/v1/chat/completions`, `/v1/models`, `/v1/embeddings`, `/v1/rerank`, and related endpoints on `:8000`. Scans `models/` at startup (drop a model in, then `make omlx-restart`). State tracked via `omlx-server.pid` / `omlx-server.log`.
 - Tests are minimal: `tests/test_hello.py` only covers `mlx_learning.hello.main()`. The benchmark CLI and serving workflow are not covered.
 
 ## Key conventions
