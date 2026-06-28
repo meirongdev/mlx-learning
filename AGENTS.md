@@ -26,7 +26,7 @@ We use `uv` for dependency management and task execution.
   - `uv run pytest`: Executes the test suite.
 - **Serving**:
   - `make server-start`: Starts the `mlx_lm` server.
-  - `make omlx-start`: Starts the `omlx` multi-model server.
+  - `make omlx-start`: Starts the `omlx` multi-model server (default on all machines).
 
 ## Coding Style & Naming Conventions
 

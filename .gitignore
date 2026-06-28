@@ -78,3 +78,9 @@ vllm-mlx.pid
 vllm-server.pid
 vllm-server.log
 bench-results/vllm-mlx-server-*.log
+
+# stable-diffusion.cpp
+bin/
+models-sd/
+sd-server.pid
+sd-server.log

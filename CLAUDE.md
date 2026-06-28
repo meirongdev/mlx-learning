@@ -48,12 +48,13 @@ uv run mypy .                                    # strict mode
 # Benchmark MLX vs omlx
 uv run mlx-bench                                 # or: make bench
 
-# vllm-mlx server (default on M2 Pro, nvfp4)
+# omlx multi-model server (default on both M2 Pro & M5)
+make omlx-start | omlx-stop | omlx-restart | omlx-status | omlx-logs [b]default[/b]
+make omlx-bench                           # benchmark model via mlx-bench --no-unload
+
+# vllm-mlx (alternative server, higher raw tok/s for text-only LLMs)
 make vllm-start | vllm-stop | vllm-restart | vllm-status | vllm-logs
 make vllm-bench                           # benchmark VLLM_MODEL_SLUG with --no-unload
-
-# omlx multi-model server (default on M5, or fallback)
-make omlx-start | omlx-stop | omlx-status | omlx-logs
 ```
 
 `HF_TOKEN` is **optional** — the default model is public. Pass it only for gated/private repos.
@@ -75,10 +76,10 @@ make omlx-start | omlx-stop | omlx-status | omlx-logs
 | `OMLX_MODEL_DIR`   | `models`                                                           |
 
 **Per-machine deployment (2026-06-28):**
-- **M2 Pro → Qwen via vllm-mlx** (switched 2026-05-03).
+- **M2 Pro → Qwen via omlx** (switched to omlx 2026-06-28; previously vllm-mlx since 2026-05-03).
 - **M5 → Gemma 4 via omlx** (switched 2026-06-28). M5's `models/` holds `mlx-community__gemma-4-26B-A4B-it-qat-nvfp4` (main chat/VLM) plus `mlx-community__Qwen3-Embedding-0.6B-4bit-DWQ` (embeddings, for testing) — the 3 Qwen chat dirs + the non-QAT Gemma were removed.
 
-omlx/vllm-mlx both bind `:8000`; stop one before starting the other.
+omlx and vllm-mlx both bind `:8000`; stop one before starting the other.
 
 ### Quantization on this hardware — empirical, not theoretical
 
@@ -116,7 +117,7 @@ omlx auto-discovers any model dropped under `models/`. Catalog of known models (
 
 | Model dir                                           | Quantization | Size   | Context | On disk | Notes |
 |-----------------------------------------------------|--------------|--------|---------|---------|-------|
-| `mlx-community__Qwen3.6-35B-A3B-nvfp4`              | NVFP4        | ~19 GB | 256k    | M2 Pro  | **Fastest on M5** (39.74 tok/s @ 512); M2 Pro: 45.36 tok/s (no HW advantage). Removed from M5 2026-06-28 |
+| `mlx-community__Qwen3.6-35B-A3B-nvfp4`              | NVFP4        | ~19 GB | 256k    | M2 Pro  | **Fastest on M5** (39.74 tok/s @ 512); M2 Pro (now on omlx): 45.36 tok/s (no HW advantage). Removed from M5 2026-06-28 |
 | `mlx-community__Qwen3.6-35B-A3B-4bit-DWQ`           | DWQ-4bit     | ~19 GB | 256k    | M2 Pro  | M2 Pro: 45.36 tok/s; on M5: 31.33 tok/s (slower than NVFP4). Removed from M5 2026-06-28 |
 | `mlx-community__Qwen3.6-35B-A3B-4bit`               | std 4bit     | ~19 GB | 256k    | M2 Pro  | M2 Pro: **45.89 tok/s** (marginally fastest on M2 Pro). Removed from M5 2026-06-28 |
 | `mlx-community__gemma-4-26b-a4b-it-nvfp4`           | NVFP4        | ~15 GB | 256k    | —       | Non-QAT Gemma 4; removed from M5 2026-06-28 |
@@ -158,7 +159,7 @@ curl -s localhost:8000/v1/embeddings -H 'Content-Type: application/json' \
 
 The M2 Pro is faster despite being older — bandwidth dominates decode. See `bench-results/` for raw logs.
 
-### Alternative server engine: vllm-mlx
+### Alternative server engine: vllm-mlx (M2 Pro was on vllm-mlx until 2026-06-28)
 
 `vllm-mlx` (PyPI, by waybarrios) is a vLLM-style OpenAI-compatible server with native MLX backend. Tested 2026-05-03 against omlx on both machines, **single-stream**:
 
