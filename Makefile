@@ -5,7 +5,14 @@ UV ?= uv
 PYTHON ?= .venv/bin/python
 HF_TOKEN ?=
 HF_HUB_CACHE ?= $(HOME)/.cache/huggingface/hub
+# Per-machine default model: M2 Pro=Qwen (vllm-mlx), M5=Gemma 4 (omlx). See scripts/detect_machine.sh.
+# Override with `MODEL_REPO=... make <target>`. Falls back to Qwen if detection fails.
+MACHINE_CHIP_SHORT ?= $(shell bash scripts/detect_machine.sh --quiet 2>/dev/null | sed -n "s/^MACHINE_CHIP_SHORT='\(.*\)'/\1/p")
+ifeq ($(MACHINE_CHIP_SHORT),M5)
+MODEL_REPO ?= mlx-community/gemma-4-26B-A4B-it-qat-nvfp4
+else
 MODEL_REPO ?= mlx-community/Qwen3.6-35B-A3B-nvfp4
+endif
 MODEL_SLUG ?= $(subst /,__,$(MODEL_REPO))
 MODEL_DIR ?= models/$(MODEL_SLUG)
 # mlx_lm.server for text-only LLMs (Qwen, Llama, ...); mlx_vlm.server for VLMs (Gemma 4, ...)
@@ -261,7 +268,9 @@ OMLX_PORT ?= 8000
 OMLX_MODEL_DIR ?= models
 OMLX_PID ?= omlx-server.pid
 OMLX_LOG ?= omlx-server.log
-OMLX_EXTRA_ARGS ?= --max-process-memory 90% --hot-cache-max-size 4GB --max-concurrent-requests 2 --initial-cache-blocks 1024
+# omlx 0.4.x: --max-process-memory was removed; use --memory-guard {safe,balanced,aggressive}
+# (or --memory-guard-gb N for a hard ceiling). "aggressive" preserves the old 90% intent.
+OMLX_EXTRA_ARGS ?= --memory-guard aggressive --hot-cache-max-size 4GB --max-concurrent-requests 2 --initial-cache-blocks 1024
 
 omlx-install:
 	@echo "Checking omlx installation..."
@@ -316,7 +325,8 @@ omlx-logs:
 	@tail -n 200 "$(OMLX_LOG)"
 
 # vllm-mlx OpenAI-compatible server (alternative to omlx; shares port 8000 — stop one before starting the other)
-VLLM_MODEL_REPO ?= mlx-community/Qwen3.6-35B-A3B-nvfp4
+# Follows the per-machine MODEL_REPO default (M2 Pro=Qwen, M5=Gemma 4); override independently if needed.
+VLLM_MODEL_REPO ?= $(MODEL_REPO)
 VLLM_MODEL_SLUG ?= $(subst /,__,$(VLLM_MODEL_REPO))
 VLLM_MODEL_DIR  ?= models/$(VLLM_MODEL_SLUG)
 VLLM_HOST       ?= 0.0.0.0
