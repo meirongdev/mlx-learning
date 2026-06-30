@@ -50,6 +50,20 @@ The project defaults to `mlx-community/Qwen3.6-35B-A3B-4bit-DWQ` (MoE, 3B active
 
 A larger MoE is both stronger and ~4.3× faster than a dense model half its size — because MoE collapses the per-token memory traffic. **DWQ vs NVFP4 has not yet been re-measured on the M2 Pro box** — re-run `make bench` there and append the result to `bench-results/`.
 
+> ⚠️ The `10.6` figure above predates the 2026 Qwen3.6 hybrid-attention VLM checkpoint and almost certainly referred to a standard-attention 27B. Do not treat it as comparable to `mlx-community/Qwen3.6-27B-4bit` (see the M5 dense-27B row below).
+
+#### Reference benchmark — M5 (153.6 GB/s), dense 27B, 2026-06-30
+`mlx-community/Qwen3.6-27B-4bit` (dense, **hybrid** Gated-DeltaNet/SSM + full attention; 64 layers), omlx 0.4.4:
+
+| Model                                  | Active/token | tok/s (512) | tok/s (1024) | Bandwidth ceiling | % of ceiling |
+|----------------------------------------|-------------:|------------:|-------------:|------------------:|-------------:|
+| Qwen3.6-27B-4bit (dense, hybrid attn)  | ~13.5 GB     | **~4.4**    | 4.36         | ~11.4 tok/s       | ~39%         |
+| Qwen3.6-35B-A3B-nvfp4 (MoE, reference) | ~1.5 GB      | ~40–49      | —            | —                 | —            |
+
+The dense 27B is **~10× slower** than the 35B-A3B MoE on the *same* M5. It is **not** swap-bound — page-ins during a full decode were only 0.31 GB, so the 15 GB model stays resident (< 26 GB GPU wired limit). It runs at only ~39% of its bandwidth ceiling because the dense footprint **plus** the linear-attention (Gated-DeltaNet/SSM) layers hit an unoptimized sequential MLX path. Full report: [`bench-results/m5-qwen3.6-27b-dense-4bit-20260630.md`](./bench-results/m5-qwen3.6-27b-dense-4bit-20260630.md).
+
+**`nvidia/Qwen3.6-27B-NVFP4` does NOT run on Apple Silicon** — it is an NVIDIA ModelOpt (BF16/F8_E4M3/U8) checkpoint for vLLM/TensorRT-LLM on Hopper/Blackwell CUDA. Its "NVFP4" is a different on-disk format from MLX-native NVFP4; no MLX runtime (omlx, mlx-lm, vllm-mlx) can load it. There is no MLX-native NVFP4 build of any Qwen3.6-27B on HF.
+
 #### Reference benchmark — M5 (153.6 GB/s), 2026-05-03
 Qwen3.6-35B-A3B head-to-head, omlx, sequential load → warm → time → unload. Three runs:
 
