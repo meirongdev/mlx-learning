@@ -23,7 +23,7 @@ make optimize-system
 ### 2. omlx Server Flags
 The `omlx` server is pre-configured in the `Makefile` with the following optimized flags (`OMLX_EXTRA_ARGS`):
 
-- `--max-process-memory 90%`: cap process memory; leaves headroom for the GUI on 32 GB.
+- `--memory-guard aggressive`: allow omlx to use most of memory for throughput, with a guard reserve. omlx 0.4.x removed `--max-process-memory` — use `--memory-guard {safe,balanced,aggressive}` (or `--memory-guard-gb N` for a hard ceiling) instead. `aggressive` preserves the old `90%` intent.
 - `--hot-cache-max-size 4GB`: in-memory prefix caching for long-context queries (up to 6.4× speedup).
 - `--max-concurrent-requests 2`: reduces memory fragmentation / scheduling overhead.
 - `--initial-cache-blocks 1024`: pre-allocates KV-cache blocks at startup to eliminate allocation jitter.

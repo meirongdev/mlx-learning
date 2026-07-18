@@ -1,8 +1,15 @@
 # MLX Learning & Benchmark
 
-Tools and scripts for running and benchmarking [MLX](https://github.com/ml-explore/mlx) models on Apple Silicon. Models are served by [`mlx_lm.server`](https://github.com/ml-explore/mlx-lm) — a production-ready OpenAI-compatible server included with mlx-lm.
+Tools and scripts for running and benchmarking [MLX](https://github.com/ml-explore/mlx) models on Apple Silicon. Models are served by [omlx](https://github.com/jundot/omlx) — a multi-model OpenAI-compatible server that auto-discovers models.
 
-The default model is **`mlx-community/Qwen3.6-35B-A3B-4bit-DWQ`** (MoE, 35B total / 3B active per token, DWQ-4bit quantized, 256k context). Quantization format choice is machine-dependent: on M2 Pro all three formats (4bit / DWQ / NVFP4) score identically (~45–46 tok/s, bandwidth-bound); on M5, NVFP4 is 1.25–1.53× faster thanks to native FP4 GPU accelerators.
+The default model is **machine-dependent** (detected via `scripts/detect_machine.sh`):
+
+| Machine     | Default model | Quantization | Notes |
+|-------------|--------------|--------------|-------|
+| M5 MBP      | `mlx-community/gemma-4-26B-A4B-it-qat-nvfp4` | QAT NVFP4 | Default chat/VLM on M5 |
+| M2 Pro MBP  | `mlx-community/Qwen3.6-35B-A3B-nvfp4` | NVFP4 | MoE, 35B total / 3B active |
+
+Quantization performance is machine-dependent: on M2 Pro all formats (4bit / DWQ / NVFP4) score identically (~45–46 tok/s, bandwidth-bound); on M5, NVFP4 is **1.25–1.53× faster** thanks to native FP4 GPU accelerators.
 
 ## Multi-machine setup
 
@@ -38,9 +45,10 @@ make quickstart
 1. Verifies macOS + Apple Silicon
 2. Installs `uv` via the official installer if missing
 3. `uv sync --extra server` (mlx-lm, mlx-vlm, huggingface_hub)
-4. Downloads `MODEL_REPO` into `models/` (skipped if already complete)
-5. Starts `mlx_lm.server` on `0.0.0.0:5001`
-6. Health-checks `GET /v1/models`
+4. Downloads `MODEL_REPO` into `models/` (skipped if already complete); model choice is **machine-aware**
+5. Installs **omlx** via Homebrew if missing (`brew tap jundot/omlx`)
+6. Starts **omlx** on `0.0.0.0:8000`
+7. Health-checks `GET /v1/models`
 
 Override defaults inline:
 
@@ -67,55 +75,60 @@ cd mlx-learning
 uv sync
 ```
 
-## Serving models with mlx_lm.server
+## Serving models with omlx (multi-model server)
 
-`mlx_lm.server` is bundled with mlx-lm (no additional install needed). Download a model first, then start the server:
+[omlx](https://github.com/jundot/omlx) is the default serving engine. It auto-discovers all models under `models/` and exposes OpenAI-compatible endpoints on `:8000`.
+
+### Install
 
 ```bash
-# Install the optional serving deps (mlx-lm, mlx-vlm, huggingface_hub)
-make server-install
-
-# Download the default model (~19 GB, 4-bit MoE) into models/
-make model-download
-
-# Start the server (listens on 0.0.0.0:5001)
-make server-start
-
-# Inspect / tail / stop
-make server-status
-make server-logs
-make server-stop
+brew tap jundot/omlx https://github.com/jundot/omlx
+brew install omlx
+# Upgrade: brew update && brew upgrade omlx
+# Run as background service: brew services start omlx
 ```
 
-The model lands in `models/mlx-community__Qwen3.6-35B-A3B-4bit-DWQ/` (slashes replaced with `__`).
+### Usage
+
+```bash
+make omlx-start                  # start on 0.0.0.0:8000
+make omlx-status                 # check PID, port, available models
+make omlx-logs                   # tail the log
+make omlx-stop                   # stop the server
+```
+
+Endpoint: `http://127.0.0.1:8000/v1`
 
 ### Switching to another model
 
-Stop the server and restart with a different model:
+omlx auto-discovers any model directory under `models/`. Drop a new model there and restart:
 
 ```bash
-make server-stop
-make server-bootstrap MODEL_REPO=mlx-community/Qwen3-30B-A3B-4bit
+make model-download MODEL_REPO=mlx-community/Qwen3-30B-A3B-4bit
+make omlx-restart
 ```
 
-### Smoke test
+The model slug for API requests is the repo name with `/` replaced by `__`:
+`mlx-community/Qwen3-30B-A3B-4bit` → `mlx-community__Qwen3-30B-A3B-4bit`
+
+### Embeddings & rerank
+
+omlx 0.4.x exposes `/v1/embeddings` and `/v1/rerank`. Drop an MLX embedding model under `models/` and restart:
 
 ```bash
-curl -s http://localhost:5001/v1/chat/completions \
-  -H 'Content-Type: application/json' \
-  -d '{"model": "models/mlx-community__Qwen3.6-35B-A3B-4bit-DWQ",
-       "messages": [{"role": "user", "content": "Hi"}],
-       "max_tokens": 32}' | jq .
+make model-download MODEL_REPO=mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ
+make omlx-restart
+curl -s localhost:8000/v1/embeddings -H 'Content-Type: application/json' \
+  -d '{"model":"mlx-community__Qwen3-Embedding-0.6B-4bit-DWQ","input":["你好","world"]}'
 ```
 
-Streaming:
+### Legacy: mlx_lm.server
+
+The original `mlx_lm.server` (bundled with mlx-lm) is still available on port 5001 for testing:
 
 ```bash
-curl -s http://localhost:5001/v1/chat/completions \
-  -H 'Content-Type: application/json' \
-  -d '{"model": "models/mlx-community__Qwen3.6-35B-A3B-4bit-DWQ",
-       "messages": [{"role": "user", "content": "Hi"}],
-       "stream": true}'
+make server-start              # start mlx_lm.server on 0.0.0.0:5001
+make server-status / logs / stop
 ```
 
 ## Benchmark CLI (`mlx-bench`)
@@ -168,8 +181,10 @@ uv run mypy .                  # type check (strict)
 - `src/mlx_learning/` — Python package; `benchmark_cli.py` exposes the `mlx-bench` Typer CLI
 - `scripts/bootstrap.sh` — idempotent one-click setup (driven by `make quickstart`)
 - `scripts/verify_model.py` — local `config.json` inspector
-- `Makefile` — install, download, omlx server lifecycle
+- `Makefile` — install, download, server lifecycle (omlx, vllm-mlx, sd.cpp, legacy mlx_lm.server)
+- `bin/` — stable-diffusion.cpp server binary (FLUX.2 Klein 4B for text-to-image)
 - `models/` — downloaded model snapshots (gitignored)
+- `models-sd/` — sd.cpp model files (diffusion, VAE, LLM encoder)
 
 ## Process / log files
 
@@ -177,29 +192,7 @@ The Makefile tracks the running daemon via PID + log files in the repo root (all
 
 - `omlx-server.pid`, `omlx-server.log` — the omlx model server
 
-## Serving with omlx (multi-model server)
-
-[omlx](https://github.com/jundot/omlx) is a multi-model OpenAI-compatible server that auto-discovers all models under `models/`.
-
-### Install
-
-```bash
-brew tap jundot/omlx https://github.com/jundot/omlx
-brew install omlx
-# Upgrade: brew update && brew upgrade omlx
-# Run as background service: brew services start omlx
-```
-
-### Usage
-
-```bash
-make omlx-start                  # start on 0.0.0.0:8000
-make omlx-status                 # check PID, port, model info
-make omlx-logs                   # tail the log
-make omlx-stop                   # stop the server
-```
-
-Endpoint: `http://127.0.0.1:8000/v1`
+Also tracked: `mlx-server.pid/log` (legacy `mlx_lm.server`), `vllm-server.pid/log` (vllm-mlx), `sd-server.pid/log` (sd.cpp).
 
 ## AI coding assistant configuration
 

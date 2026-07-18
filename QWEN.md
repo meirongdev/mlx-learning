@@ -6,7 +6,11 @@ A toolkit for benchmarking and serving MLX-based LLMs on Apple Silicon. Primary 
 
 **Host machine:** Apple M5 (base), 32 GB unified memory, 153.6 GB/s bandwidth.
 
-**Default model:** `mlx-community/Qwen3.6-35B-A3B-nvfp4` (MoE, 35B total / 3B active, NVFP4, 256k context). On M5 with omlx: ~49 tok/s warm.
+**Default model:** machine-dependent (see Makefile `MODEL_REPO`):
+- M5 → `mlx-community/gemma-4-26B-A4B-it-qat-nvfp4` (Gemma 4 VLM, QAT NVFP4, 256k context)
+- M2 Pro+ → `mlx-community/Qwen3.6-35B-A3B-nvfp4` (MoE, 35B total / 3B active, NVFP4, 256k context)
+
+On M5 with omlx, Gemma 4 runs at ~30 tok/s; Qwen NVFP4 (when loaded separately) reaches ~49 tok/s warm.
 
 **Active server on M5:** omlx (OpenAI-compatible, port 8000). vllm-mlx also available (shares port 8000 — stop one before starting the other).
 
@@ -25,14 +29,15 @@ A toolkit for benchmarking and serving MLX-based LLMs on Apple Silicon. Primary 
 | File | Purpose |
 |------|---------|
 | `pyproject.toml` | Project metadata, deps, entry points, tool configs (ruff, mypy, pytest) |
-| `Makefile` | Full lifecycle: quickstart, install, download, server, proxy, omlx, vllm |
+| `Makefile` | Full lifecycle: quickstart, install, download, server, proxy, omlx, vllm, sd.cpp |
 | `src/mlx_learning/benchmark_cli.py` | `mlx-bench` Typer CLI with `test_mlx`, `test_omlx`, `benchmark` |
 | `src/mlx_learning/hello.py` | Minimal module (tested by `tests/test_hello.py`) |
-| `scripts/bootstrap.sh` | Idempotent setup: platform check → uv → deps → model → server → health |
+| `scripts/bootstrap.sh` | Idempotent setup: platform check → uv → deps → model → omlx install → omlx serve → health |
 | `scripts/detect_machine.sh` | Chip/RAM/bandwidth detection; `--quiet` (KEY=VALUE) and `--check=M5` modes |
 | `scripts/openai_proxy.py` | OpenAI-compatible proxy forwarding to local MLX server |
 | `scripts/verify_model.py` | Local `config.json` inspector for downloaded models |
 | `models/` | Downloaded model snapshots (gitignored) |
+| `models-sd/` | sd.cpp model files (diffusion, VAE, LLM encoder) — FLUX.2 Klein 4B |
 
 ## Build & Run Commands
 
@@ -69,6 +74,12 @@ make vllm-status / logs / stop
 make vllm-bench                  # benchmark against vllm-mlx
 ```
 
+### Serving (sd.cpp — text-to-image)
+```bash
+make sd-start                    # start FLUX.2 Klein 4B on 0.0.0.0:7860
+make sd-status / logs / stop
+```
+
 ### Serving (mlx_lm.server — legacy)
 ```bash
 make server-start                # port 5001 (default)
@@ -90,7 +101,7 @@ make optimize-system             # set GPU wired memory to 30000MB (requires sud
 - **mypy strict** with `ignore_missing_imports = true` (MLX/mlx-lm lack type stubs).
 - **ruff** — double quotes, 88-char line limit, `skip-magic-trailing-comma = false`.
 - **Tests** — minimal coverage; `tests/test_hello.py` tests `mlx_learning.hello.main()`.
-- **PID/log files** — `omlx-server.pid/log`, `vllm-server.pid/log`, `mlx-server.pid/log` at repo root (all gitignored).
+- **PID/log files** — `omlx-server.pid/log`, `vllm-server.pid/log`, `mlx-server.pid/log`, `sd-server.pid/log` at repo root (all gitignored).
 
 ## Machine-Aware Behavior
 
@@ -106,6 +117,7 @@ All heavy operations (`model-download`, `omlx-start`, `bench`, `bootstrap`) auto
 | omlx | 8000 | `http://127.0.0.1:8000/v1` |
 | vllm-mlx | 8000 | `http://127.0.0.1:8000/v1` |
 | mlx_lm.server | 5001 | `http://127.0.0.1:5001/v1` |
+| sd.cpp (text-to-image) | 7860 | `http://127.0.0.1:7860/v1/images/generations` |
 | OpenAI proxy | 5101 | `http://127.0.0.1:5101/v1` |
 
 ## Model Slugs

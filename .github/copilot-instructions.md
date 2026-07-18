@@ -2,7 +2,7 @@
 
 ## Build, test, lint, and runtime commands
 
-- `make quickstart` — one-click setup on a fresh Apple Silicon Mac: verifies platform, installs `uv` if missing, `uv sync --extra server`, downloads `MODEL_REPO`, starts `mlx_lm.server`, health-checks `/v1/models`. Idempotent — re-run freely. See `scripts/bootstrap.sh`.
+- `make quickstart` — one-click setup on a fresh Apple Silicon Mac: verifies platform, installs `uv` if missing, `uv sync --extra server`, downloads `MODEL_REPO` (machine-aware default), installs and starts **omlx**, health-checks `/v1/models`. Idempotent — re-run freely. See `scripts/bootstrap.sh`.
 - `uv sync` (or `make install`) — install base deps.
 - `uv sync --extra server` (or `make server-install`) — install serving deps (`mlx-lm`, `mlx-vlm`, `huggingface_hub`).
 - `uv build` — build distributables.
@@ -33,7 +33,7 @@ omlx 0.4.x removed `--max-process-memory`; the Makefile now uses `--memory-guard
 
 `MODEL_REPO` is **per-machine** — the Makefile picks it from `scripts/detect_machine.sh` (M5 → Gemma 4, else → Qwen). Override with `MODEL_REPO=... make <target>`.
 
-- **M2 Pro** → `mlx-community/Qwen3.6-35B-A3B-nvfp4` (MoE, 35B total / 3B active, 256k), served by **vllm-mlx**.
+- **M2 Pro** → `mlx-community/Qwen3.6-35B-A3B-nvfp4` (MoE, 35B total / 3B active, 256k), served by **omlx** (switched from vllm-mlx 2026-06-28).
 - **M5** → `mlx-community/gemma-4-26B-A4B-it-qat-nvfp4` (Gemma 4 VLM, QAT-NVFP4, 256k), served by **omlx** (switched 2026-06-28). M5's `models/` holds **only** this model — the Qwen dirs + non-QAT Gemma were removed.
 - `VLLM_MODEL_REPO` defaults to `$(MODEL_REPO)`.
 - `OMLX_HOST=0.0.0.0`, `OMLX_PORT=8000`, `OMLX_MODEL_DIR=models`
@@ -44,7 +44,7 @@ On the M5 box, NVFP4 beat DWQ ~25% for `Qwen3.6-35B-A3B` (39.74 vs 31.33 tok/s @
 
 ## Alternative server engine: vllm-mlx
 
-`vllm-mlx` (PyPI, `uv tool install vllm-mlx`) is a vLLM-style OpenAI-compatible MLX server tested on this repo on 2026-05-03 (M5 only — M2 Pro pending). On Qwen3.6-35B-A3B NVFP4, it's **5–10% faster** than omlx at single-stream decode (51–52 vs 48–50 tok/s). **It crashes on Gemma 4 VLM** in 0.2.9 (`mlx_vlm` thread/stream bug). Default remains omlx because it's operationally simpler and works on every model class. Use vllm-mlx selectively for Qwen-class text LLMs when continuous batching, tool/reasoning parsers, KV-cache quantization, or speculative decoding matter. Full bench + flag map: `bench-results/m5-omlx-vs-vllm-mlx-nvfp4-20260503.md`.
+`vllm-mlx` (PyPI, `uv tool install vllm-mlx`) is a vLLM-style OpenAI-compatible MLX server. On Qwen3.6-35B-A3B NVFP4 it was **5–10% faster** than omlx on M5 (51–52 vs 48–50 tok/s) and **~28% faster** on M2 Pro (58.8 vs 45.9 tok/s). However, it crashed on Gemma 4 VLM in 0.2.9 (fixed in 0.3.0). Default remains **omlx** because it's operationally simpler and works on every model class. Use vllm-mlx selectively for Qwen-class text LLMs when continuous batching, tool/reasoning parsers, KV-cache quantization, or speculative decoding matter. Full bench + flag map: `bench-results/m5-omlx-vs-vllm-mlx-nvfp4-20260503.md`, `bench-results/m2pro-omlx-vs-vllm-mlx-20260503.md`.
 
 ## High-level architecture
 
