@@ -49,4 +49,4 @@ Maintain high code quality by adhering to these standards:
 - **Pull Requests**: 
   - Ensure all tests pass (`uv run pytest`) before submitting.
   - Provide a clear description of the changes and any necessary environment adjustments.
-  - If the change affects benchmark performance, include the performance delta.
+  - If the change affects benchmark performance, include the performance delta **and the machine it was measured on**. This repo is shared by an M2 Pro (200 GB/s) and an M5 base (153.6 GB/s), and decode tok/s differs substantially between them — run `make detect-machine` first and state the result. Numbers are also tied to the omlx version; record it.

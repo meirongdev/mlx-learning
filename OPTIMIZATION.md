@@ -18,12 +18,15 @@ By default, macOS may reclaim memory used by the GPU, leading to latency spikes 
 ```bash
 make optimize-system
 ```
-*This runs `sudo sysctl iogpu.wired_limit_mb=30000`, which is recommended for 32 GB RAM Macs when running the 35B MoE model to ensure maximum stability and performance.* The script prints the detected machine first so you can confirm.
+*This runs `sudo sysctl iogpu.wired_limit_mb=30720`, recommended for 32 GB Macs running the 35B MoE model.* The script prints the detected machine first so you can confirm. **macOS resets this on every reboot** — re-run after each boot, or omlx clamps to the kernel value and logs `Metal cap (…) is below the oMLX static ceiling (…)`. Effective ceiling = `min(omlx ceiling, iogpu cap) − hot_cache_max_size`.
 
 ### 2. omlx Server Flags
-The `omlx` server is pre-configured in the `Makefile` with the following optimized flags (`OMLX_EXTRA_ARGS`):
 
-- `--memory-guard aggressive`: allow omlx to use most of memory for throughput, with a guard reserve. omlx 0.4.x removed `--max-process-memory` — use `--memory-guard {safe,balanced,aggressive}` (or `--memory-guard-gb N` for a hard ceiling) instead. `aggressive` preserves the old `90%` intent.
+> ⚠️ **On these machines the Makefile flags below are NOT what the live server runs.** omlx is installed as a Homebrew LaunchAgent whose `ProgramArguments` are just `omlx serve` with no flags, so every effective setting comes from **`~/.omlx/settings.json`** (host, port, model dir, memory guard, cache, sampling). `OMLX_EXTRA_ARGS` only applies to the source-install fallback (`OMLX_FORCE_NOHUP=1`). To change live behaviour, edit `~/.omlx/settings.json` and `make omlx-restart`.
+
+The `Makefile` documents the intended configuration as `OMLX_EXTRA_ARGS`:
+
+- `--memory-guard aggressive`: allow omlx to use most of memory for throughput, with a guard reserve. omlx 0.4.x removed `--max-process-memory` — use `--memory-guard {safe,balanced,aggressive}` (or `--memory-guard-gb N` for a hard ceiling) instead. `aggressive` preserves the old `90%` intent. (Current M2 Pro `settings.json` uses tier `custom` with a 30 GB ceiling.)
 - `--hot-cache-max-size 4GB`: in-memory prefix caching for long-context queries (up to 6.4× speedup).
 - `--max-concurrent-requests 2`: reduces memory fragmentation / scheduling overhead.
 - `--initial-cache-blocks 1024`: pre-allocates KV-cache blocks at startup to eliminate allocation jitter.
@@ -48,7 +51,11 @@ The project defaults to `mlx-community/Qwen3.6-35B-A3B-4bit-DWQ` (MoE, 3B active
 | Qwen3.6-27B-4bit (dense)             | ~15 GB                    | **10.6**   |
 | Qwen3.6-35B-A3B-4bit (MoE)           | ~1.5–2 GB                 | **45.8**   |
 
-A larger MoE is both stronger and ~4.3× faster than a dense model half its size — because MoE collapses the per-token memory traffic. **DWQ vs NVFP4 has not yet been re-measured on the M2 Pro box** — re-run `make bench` there and append the result to `bench-results/`.
+A larger MoE is both stronger and ~4.3× faster than a dense model half its size — because MoE collapses the per-token memory traffic.
+
+**Updated 2026-08-01 (omlx 0.5.4rc1):** the M2 Pro now runs Qwen3.6-35B-A3B-nvfp4 at **57.9 tok/s warm** — the server upgrade alone added +27% over the 45.8 figure above. The three quant formats were measured on 0.4.x and tied (std 4bit 45.89, DWQ 45.36, NVFP4 45.36), consistent with being bandwidth-bound; only NVFP4 has been re-measured on 0.5.x.
+
+**Speculative / parallel decoding does not help these MoE models** — measured three ways on the M2 Pro: DFlash −19…−29%, Gemma's own MTP assistant −12%, DiffusionGemma −68%. On a sparse MoE, processing N positions in one forward pass activates the *union* of experts across those N positions, so the weight read grows with N rather than staying at the per-token active set. Full table in `CLAUDE.md`.
 
 #### Reference benchmark — M5 (153.6 GB/s), 2026-05-03
 Qwen3.6-35B-A3B head-to-head, omlx, sequential load → warm → time → unload. Three runs:
@@ -59,7 +66,7 @@ Qwen3.6-35B-A3B head-to-head, omlx, sequential load → warm → time → unload
 | Run 2 — cold-ish (1024) | 36.47     | 29.23     | 1.25×       |
 | Run 3 — warm (1024)   | **49.14**   | 32.11     | **1.53×**   |
 
-NVFP4 wins consistently. The warm-state run is where it genuinely shines — **49.14 tok/s** beats the historical M2 Pro 4-bit ceiling (45.8 tok/s) despite the M5 having ~25% less memory bandwidth. DWQ barely benefits from warm-state (~10% lift) while NVFP4 jumps ~35%, suggesting accelerator/kernel state — not just file cache — favors FP4 on M5.
+NVFP4 wins consistently. The warm-state run is where it genuinely shines — **49.14 tok/s**, which at the time beat the M2 Pro's 4-bit ceiling (45.8 tok/s) despite the M5 having ~25% less memory bandwidth. *(That comparison no longer holds: on omlx 0.5.4rc1 the M2 Pro reaches 57.9 tok/s. These M5 numbers are from omlx 0.4.x and have not been re-measured — re-run before comparing across machines.)* DWQ barely benefits from warm-state (~10% lift) while NVFP4 jumps ~35%, suggesting accelerator/kernel state — not just file cache — favors FP4 on M5.
 
 **Recommendation on M5: use NVFP4.** Both fit in 32 GB with comfortable KV-cache headroom; quality difference is small for normal chat workloads. To switch:
 

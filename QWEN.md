@@ -4,15 +4,17 @@
 
 A toolkit for benchmarking and serving MLX-based LLMs on Apple Silicon. Primary use case: comparing generation speed between local MLX inference and a local inference server on the same machine.
 
-**Host machine:** Apple M5 (base), 32 GB unified memory, 153.6 GB/s bandwidth.
+**Host machine:** this repo is shared by **two** 32 GB machines — an M2 Pro (200 GB/s) and an M5 base (153.6 GB/s). Never assume which one you are on; run `make detect-machine` first.
 
 **Default model:** machine-dependent (see Makefile `MODEL_REPO`):
 - M5 → `mlx-community/gemma-4-26B-A4B-it-qat-nvfp4` (Gemma 4 VLM, QAT NVFP4, 256k context)
 - M2 Pro+ → `mlx-community/Qwen3.6-35B-A3B-nvfp4` (MoE, 35B total / 3B active, NVFP4, 256k context)
 
-On M5 with omlx, Gemma 4 runs at ~30 tok/s; Qwen NVFP4 (when loaded separately) reaches ~49 tok/s warm.
+Throughput (512-token warm gen): **M2 Pro on omlx 0.5.4rc1 — Qwen 57.9 tok/s, Gemma 4 44.3 tok/s** (measured 2026-08-01). On M5 under omlx 0.4.x, Gemma 4 ran ~30 tok/s and Qwen NVFP4 ~49 tok/s warm — *not re-measured on 0.5.x*.
 
-**Active server on M5:** omlx (OpenAI-compatible, port 8000). vllm-mlx also available (shares port 8000 — stop one before starting the other).
+**Server:** omlx (OpenAI-compatible, port 8000), installed as a Homebrew LaunchAgent on both boxes — so its live config comes from `~/.omlx/settings.json`, not the Makefile flags. vllm-mlx also available (shares port 8000 — stop one before starting the other), but as of omlx 0.5.4rc1 it no longer has a throughput advantage on the M2 Pro.
+
+**Do not enable speculative/parallel decoding on these MoE models** — DFlash, Gemma's MTP assistant, and DiffusionGemma were all benchmarked on the M2 Pro and all were slower (−12% to −68%). See `CLAUDE.md`.
 
 ## Architecture
 
@@ -59,13 +61,15 @@ uv run mypy .                    # type check (strict)
 uv run mlx-bench                 # benchmark MLX vs local server
 ```
 
-### Serving (omlx — M5 default)
+### Serving (omlx — default on both machines)
 ```bash
 make omlx-start                  # start on 0.0.0.0:8000
 make omlx-status                 # check PID, port, model
 make omlx-logs                   # tail log
 make omlx-stop                   # stop server
+make omlx-restart                # REQUIRED after `brew upgrade omlx`
 ```
+`make omlx-restart` is not optional after an upgrade: `brew upgrade` deletes the old Cellar dir but leaves the running server up, so it keeps serving from a path that no longer exists and endpoints whose deps only exist in the new build start returning 500.
 
 ### Serving (vllm-mlx — alternative)
 ```bash

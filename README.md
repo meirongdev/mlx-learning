@@ -9,7 +9,7 @@ The default model is **machine-dependent** (detected via `scripts/detect_machine
 | M5 MBP      | `mlx-community/gemma-4-26B-A4B-it-qat-nvfp4` | QAT NVFP4 | Default chat/VLM on M5 |
 | M2 Pro MBP  | `mlx-community/Qwen3.6-35B-A3B-nvfp4` | NVFP4 | MoE, 35B total / 3B active |
 
-Quantization performance is machine-dependent: on M2 Pro all formats (4bit / DWQ / NVFP4) score identically (~45–46 tok/s, bandwidth-bound); on M5, NVFP4 is **1.25–1.53× faster** thanks to native FP4 GPU accelerators.
+Quantization performance is machine-dependent: on M2 Pro all formats (4bit / DWQ / NVFP4) score identically (bandwidth-bound); on M5, NVFP4 is **1.25–1.53× faster** thanks to native FP4 GPU accelerators. Absolute numbers moved with the server version — M2 Pro now runs **57.9 tok/s** on omlx 0.5.4rc1 (was ~45–46 on 0.4.x). See [Reference numbers](#reference-numbers-qwen36-35b-a3b-warmup--512-tokens).
 
 ## Multi-machine setup
 
@@ -113,14 +113,24 @@ The model slug for API requests is the repo name with `/` replaced by `__`:
 
 ### Embeddings & rerank
 
-omlx 0.4.x exposes `/v1/embeddings` and `/v1/rerank`. Drop an MLX embedding model under `models/` and restart:
+omlx exposes `/v1/embeddings` and `/v1/rerank`. **They need two different models** — a reranker is a SequenceClassification model, so pointing `/v1/rerank` at an embedding model returns HTTP 400 `"is not a reranker model"`. Drop both under `models/` and restart:
 
 ```bash
-make model-download MODEL_REPO=mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ
+make model-download MODEL_REPO=mlx-community/Qwen3-Embedding-4B-4bit-DWQ   # /v1/embeddings
+make model-download MODEL_REPO=mlx-community/Qwen3-Reranker-0.6B-4bit      # /v1/rerank
 make omlx-restart
+
 curl -s localhost:8000/v1/embeddings -H 'Content-Type: application/json' \
-  -d '{"model":"mlx-community__Qwen3-Embedding-0.6B-4bit-DWQ","input":["你好","world"]}'
+  -d '{"model":"mlx-community__Qwen3-Embedding-4B-4bit-DWQ","input":["你好","world"]}'
+curl -s localhost:8000/v1/rerank -H 'Content-Type: application/json' \
+  -d '{"model":"mlx-community__Qwen3-Reranker-0.6B-4bit","query":"什么是苹果芯片","documents":["Apple Silicon is an ARM SoC","香蕉是一种水果"]}'
 ```
+
+### Audio (TTS / STT)
+
+`/v1/audio/speech` and `/v1/audio/transcriptions` work the same way. The backing libraries (`mlx_audio`, `mlx_embeddings`) ship **inside the omlx Homebrew build** — if these 500 with `No module named 'mlx_audio.tts.models'`, do **not** `pip install`; you are running a stale server after a `brew upgrade` (see below). Note `voice` has no `"default"` — valid values are `serena, vivian, uncle_fu, ryan, aiden, ono_anna, sohee, eric, dylan`.
+
+> ⚠️ **`brew upgrade omlx` does not restart the running server.** It deletes the old Cellar directory while the LaunchAgent keeps serving from the missing path. Always `make omlx-restart` after upgrading, and check `ps -axo pid,etime,comm | grep omlx-server` shows a fresh `etime`.
 
 ### Legacy: mlx_lm.server
 
@@ -144,13 +154,24 @@ Options: `--mlx-model`, `--omlx-model`, `--prompt`, `--max-tokens`, `--verbose`.
 
 ### Reference numbers (Qwen3.6-35B-A3B, warmup + 512 tokens)
 
+**Current (omlx 0.5.4rc1, measured 2026-08-01, M2 Pro only):**
+
+| Model | M2 Pro tok/s | Notes |
+|-------|------------:|-------|
+| `nvfp4` | **57.9 warm** | Deployed default. The 0.4.x → 0.5.4rc1 upgrade alone added **+27%** |
+| `gemma-4-26B-A4B-it-qat-nvfp4` | **44.3 warm** | Secondary chat/VLM model |
+
+**Historical (omlx 0.4.x) — M5 figures have NOT been re-measured on 0.5.x:**
+
 | Model | M2 Pro tok/s | M5 tok/s | Notes |
 |-------|------------:|----------:|-------|
-| `4bit` (std) | **45.89** | — | M2 Pro best; no FP4 HW advantage |
+| `4bit` (std) | 45.89 | — | M2 Pro best; no FP4 HW advantage |
 | `4bit-DWQ` | 45.36 | 31.33 | M2 Pro bandwidth-bound; M5 limited by 153.6 GB/s |
-| `nvfp4` | 45.36 | 39.74 cold / **49.14** warm | M5 native FP4 accelerators kick in; warm peak beats M2 Pro |
+| `nvfp4` | 45.36 | 39.74 cold / **49.14** warm | M5 native FP4 accelerators kick in |
 
 **Why all three tie on M2 Pro:** decode is memory-bandwidth-bound — `tok/s ≈ bandwidth / bytes_per_token`. All formats load the same ~19 GB of 4-bit weights, so the 200 GB/s bus is the ceiling regardless of format. M2 Pro has no native FP4 hardware, so NVFP4 offers no advantage.
+
+**Speculative / parallel decoding is a measured loss on these MoE models** — DFlash −19…−29%, Gemma's own MTP assistant −12%, DiffusionGemma −68%. On a sparse MoE, processing N positions per forward pass activates the *union* of experts across those N positions, so the weight read grows with N. See `CLAUDE.md` for the full table.
 
 **Why M5 NVFP4 can beat M2 Pro:** M5 (Oct 2025) added native FP4 GPU accelerators that skip dequantization entirely, reducing compute overhead enough to offset the narrower bus (153.6 GB/s). The 49 tok/s warm peak requires model weights to be resident in GPU wired memory; cold runs (~36–40 tok/s) are limited by DRAM bandwidth as usual.
 
@@ -188,11 +209,9 @@ uv run mypy .                  # type check (strict)
 
 ## Process / log files
 
-The Makefile tracks the running daemon via PID + log files in the repo root (all gitignored):
+**On these machines omlx runs as a Homebrew LaunchAgent, not from the Makefile's PID file.** `scripts/omlx.sh` detects that and delegates `start`/`stop`/`restart` to `brew services`; all effective omlx config then comes from `~/.omlx/settings.json` (host, port, model dir, memory guard, cache), **not** the Makefile's `OMLX_EXTRA_ARGS`. Its logs go to `$(brew --prefix)/var/log/omlx.log` and `~/.omlx/logs/`. The `omlx-server.pid`/`.log` pair in the repo root is only used by the source-install fallback (`OMLX_FORCE_NOHUP=1`).
 
-- `omlx-server.pid`, `omlx-server.log` — the omlx model server
-
-Also tracked: `mlx-server.pid/log` (legacy `mlx_lm.server`), `vllm-server.pid/log` (vllm-mlx), `sd-server.pid/log` (sd.cpp).
+Other servers still use repo-root PID + log files (all gitignored): `mlx-server.pid/log` (legacy `mlx_lm.server`), `vllm-server.pid/log` (vllm-mlx), `sd-server.pid/log` (sd.cpp).
 
 ## AI coding assistant configuration
 
