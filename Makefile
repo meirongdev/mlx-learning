@@ -29,7 +29,7 @@ EXTRA_SERVER_ARGS ?=
 .PHONY: help quickstart install server-install model-download server-bootstrap server-start server-stop \
 	server-restart server-status server-logs test lint format clean clean-server bench \
 	proxy-start proxy-stop proxy-restart proxy-status proxy-logs verify \
-	omlx-install omlx-start omlx-stop omlx-status omlx-logs optimize-system detect-machine \
+	omlx-install omlx-start omlx-stop omlx-restart omlx-status omlx-logs optimize-system detect-machine \
 	vllm-install vllm-start vllm-stop vllm-restart vllm-status vllm-logs vllm-bench \
 	sd-install sd-model-download sd-start sd-stop sd-status sd-logs
 
@@ -78,8 +78,8 @@ optimize-system:
 	@echo "Optimizing GPU wired memory limit..."
 	@bash scripts/detect_machine.sh
 	@echo "Current value: $$(sysctl -n iogpu.wired_limit_mb 2>/dev/null || echo 'not set')"
-	@echo "Setting to 30000 (recommended for 32GB RAM Macs with large models)..."
-	sudo sysctl iogpu.wired_limit_mb=30000
+	@echo "Setting to 30720 (30.0 GB; omlx's recommended cap for 32GB Macs with large models)..."
+	sudo sysctl iogpu.wired_limit_mb=30720
 	@echo "Done."
 
 quickstart:
@@ -272,9 +272,28 @@ OMLX_PORT ?= 8000
 OMLX_MODEL_DIR ?= models
 OMLX_PID ?= omlx-server.pid
 OMLX_LOG ?= omlx-server.log
+# NOTE: the live deployment on these Macs is a Homebrew LaunchAgent (KeepAlive=true)
+# that runs bare `omlx serve` and reads ALL config from ~/.omlx/settings.json.
+# OMLX_EXTRA_ARGS below is therefore used ONLY by the nohup source-install fallback
+# in scripts/omlx.sh — the brew service ignores it. To change live behavior edit
+# ~/.omlx/settings.json and `make omlx-restart`.
 # omlx 0.4.x: --max-process-memory was removed; use --memory-guard {safe,balanced,aggressive}
 # (or --memory-guard-gb N for a hard ceiling). "aggressive" preserves the old 90% intent.
-OMLX_EXTRA_ARGS ?= --memory-guard aggressive --hot-cache-max-size 4GB --max-concurrent-requests 2 --initial-cache-blocks 1024
+OMLX_EXTRA_ARGS ?= --memory-guard aggressive --memory-guard-gb 27 --hot-cache-max-size 4GB --max-concurrent-requests 2 --initial-cache-blocks 1024
+# Restart/stop robustness knobs. omlx unloads a large model on shutdown, so the socket
+# can take several seconds to free — stop waits before start rebinds; start/restart poll
+# /v1/models until healthy.
+OMLX_LOAD_TIMEOUT ?= 900
+OMLX_STOP_TIMEOUT ?= 30
+OMLX_STARTUP_POLL_INTERVAL ?= 5
+# Homebrew LaunchAgent label. When this service is loaded it (not the nohup path) owns
+# :OMLX_PORT, so scripts/omlx.sh delegates to `brew services` instead of fighting KeepAlive.
+OMLX_BREW_LABEL ?= homebrew.mxcl.omlx
+# Env passed to scripts/omlx.sh, which owns all omlx lifecycle logic (brew-aware).
+OMLX_ENV = OMLX_HOST="$(OMLX_HOST)" OMLX_PORT="$(OMLX_PORT)" OMLX_MODEL_DIR="$(OMLX_MODEL_DIR)" \
+	OMLX_PID="$(OMLX_PID)" OMLX_LOG="$(OMLX_LOG)" OMLX_EXTRA_ARGS="$(OMLX_EXTRA_ARGS)" \
+	OMLX_LOAD_TIMEOUT="$(OMLX_LOAD_TIMEOUT)" OMLX_STOP_TIMEOUT="$(OMLX_STOP_TIMEOUT)" \
+	OMLX_STARTUP_POLL_INTERVAL="$(OMLX_STARTUP_POLL_INTERVAL)" OMLX_BREW_LABEL="$(OMLX_BREW_LABEL)"
 
 omlx-install:
 	@echo "Checking omlx installation..."
@@ -293,40 +312,19 @@ omlx-install:
 	@echo "omlx $(shell omlx --version 2>/dev/null || echo 'installed') found on PATH"
 
 omlx-start:
-	@bash scripts/detect_machine.sh
-	@if [ -f "$(OMLX_PID)" ] && kill -0 "$$(cat "$(OMLX_PID)")" 2>/dev/null; then \
-		echo "omlx already running with PID $$(cat "$(OMLX_PID)")"; exit 0; \
-	fi
-	@if lsof -nP -iTCP:$(OMLX_PORT) -sTCP:LISTEN >/dev/null 2>&1; then \
-		echo "Port $(OMLX_PORT) is already in use:"; \
-		lsof -nP -iTCP:$(OMLX_PORT) -sTCP:LISTEN; \
-		exit 1; \
-	fi
-	@nohup omlx serve \
-		--model-dir "$(OMLX_MODEL_DIR)" \
-		--host "$(OMLX_HOST)" \
-		--port "$(OMLX_PORT)" \
-		$(OMLX_EXTRA_ARGS) >"$(OMLX_LOG)" 2>&1 & \
-	pid=$$!; echo "$$pid" > "$(OMLX_PID)"; \
-	echo "Started omlx server PID $$pid on $(OMLX_HOST):$(OMLX_PORT) (models: $(OMLX_MODEL_DIR))"
+	@$(OMLX_ENV) bash scripts/omlx.sh start
 
 omlx-stop:
-	@if [ ! -f "$(OMLX_PID)" ]; then echo "No omlx PID file"; exit 0; fi
-	@pid=$$(cat "$(OMLX_PID)"); \
-	if kill -0 "$$pid" 2>/dev/null; then kill "$$pid"; echo "Stopped omlx PID $$pid"; \
-	else echo "PID $$pid not running"; fi; \
-	rm -f "$(OMLX_PID)"
+	@$(OMLX_ENV) bash scripts/omlx.sh stop
 
-omlx-restart: omlx-stop omlx-start
+omlx-restart:
+	@$(OMLX_ENV) bash scripts/omlx.sh restart
 
 omlx-status:
-	@if [ -f "$(OMLX_PID)" ]; then echo "PID: $$(cat "$(OMLX_PID)")"; else echo "PID: not running"; fi
-	@echo "Model dir: $(OMLX_MODEL_DIR)"
-	@echo "Endpoint:  http://127.0.0.1:$(OMLX_PORT)/v1"
-	@lsof -nP -iTCP:$(OMLX_PORT) -sTCP:LISTEN || true
+	@$(OMLX_ENV) bash scripts/omlx.sh status
 
 omlx-logs:
-	@tail -n 200 "$(OMLX_LOG)"
+	@$(OMLX_ENV) bash scripts/omlx.sh logs
 
 # vllm-mlx OpenAI-compatible server (alternative to omlx; shares port 8000 — stop one before starting the other)
 # Follows the per-machine MODEL_REPO default; override independently if needed.
