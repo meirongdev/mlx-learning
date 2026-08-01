@@ -19,6 +19,7 @@ import urllib.error
 import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from typing import Any
 
 DEFAULT_MLX_BASE = "http://127.0.0.1:5001"
 DEFAULT_MODEL_DIR = "models/mlx-community__Qwen3.6-35B-A3B-4bit"
@@ -29,7 +30,7 @@ def make_handler(mlx_base: str, default_model: str) -> type[BaseHTTPRequestHandl
     class ProxyHandler(BaseHTTPRequestHandler):
         # ── /v1/chat/completions — streaming-aware pass-through ───────────────
 
-        def _proxy_chat(self, payload: dict) -> None:
+        def _proxy_chat(self, payload: dict[str, Any]) -> None:
             if not payload.get("model"):
                 payload["model"] = default_model
             data = json.dumps(payload).encode()
@@ -80,9 +81,9 @@ def make_handler(mlx_base: str, default_model: str) -> type[BaseHTTPRequestHandl
         # ── /v1/responses — Responses API shim ───────────────────────────────
 
         @staticmethod
-        def _responses_to_chat(r_req: dict) -> dict:
+        def _responses_to_chat(r_req: dict[str, Any]) -> dict[str, Any]:
             """Translate Responses API request -> Chat Completions request."""
-            messages: list[dict] = []
+            messages: list[dict[str, Any]] = []
             if r_req.get("instructions"):
                 messages.append({"role": "system", "content": r_req["instructions"]})
             inp = r_req.get("input", "")
@@ -113,7 +114,7 @@ def make_handler(mlx_base: str, default_model: str) -> type[BaseHTTPRequestHandl
                                     parts.append(t)
                             content = "".join(parts)
                         messages.append({"role": role, "content": content})
-            chat: dict = {
+            chat: dict[str, Any] = {
                 "model": r_req.get("model") or default_model,
                 "messages": messages,
             }
@@ -132,8 +133,8 @@ def make_handler(mlx_base: str, default_model: str) -> type[BaseHTTPRequestHandl
 
         @staticmethod
         def _chat_to_responses(
-            chat_resp: dict, model: str, response_id: str, item_id: str
-        ) -> dict:
+            chat_resp: dict[str, Any], model: str, response_id: str, item_id: str
+        ) -> dict[str, Any]:
             """Translate Chat Completions response -> Responses API response."""
             choice = (chat_resp.get("choices") or [{}])[0]
             msg = choice.get("message", {})
@@ -163,7 +164,7 @@ def make_handler(mlx_base: str, default_model: str) -> type[BaseHTTPRequestHandl
                 },
             }
 
-        def _handle_responses(self, r_req: dict) -> None:
+        def _handle_responses(self, r_req: dict[str, Any]) -> None:
             response_id = "resp_" + uuid.uuid4().hex[:20]
             item_id = "msg_" + uuid.uuid4().hex[:20]
             model = r_req.get("model") or default_model
@@ -207,7 +208,7 @@ def make_handler(mlx_base: str, default_model: str) -> type[BaseHTTPRequestHandl
 
                 seq = 0
 
-                def sse(name: str, payload: dict) -> None:
+                def sse(name: str, payload: dict[str, Any]) -> None:
                     nonlocal seq
                     payload["sequence_number"] = seq
                     seq += 1
@@ -384,7 +385,10 @@ def make_handler(mlx_base: str, default_model: str) -> type[BaseHTTPRequestHandl
         # ── helpers ───────────────────────────────────────────────────────────
 
         def _send_json(
-            self, code: int, body: bytes, extra_headers: list | None = None
+            self,
+            code: int,
+            body: bytes,
+            extra_headers: list[tuple[str, str]] | None = None,
         ) -> None:
             self.send_response(code)
             has_ct = False

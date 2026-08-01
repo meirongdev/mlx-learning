@@ -36,6 +36,7 @@ dev-dependencies = [
     "ruff>=0.9.1",
     "mypy>=1.15.0",
     "pytest>=8.3.4",
+    "types-requests>=2.32.0",  # stubs for `requests` — mypy runs strict
 ]
 
 [tool.ruff]

@@ -9,7 +9,9 @@ console = Console()
 app = typer.Typer()
 
 
-def warmup_model(base_url: str, model_name: str, timeout: float | None = None) -> float | None:
+def warmup_model(
+    base_url: str, model_name: str, timeout: float | None = None
+) -> float | None:
     """Trigger model load with a tiny request; return elapsed seconds (or None on failure)."""
     url = f"{base_url.rstrip('/')}/v1/chat/completions"
     payload = {
@@ -23,7 +25,9 @@ def warmup_model(base_url: str, model_name: str, timeout: float | None = None) -
         resp = requests.post(url, json=payload, timeout=timeout)
         elapsed = time.perf_counter() - start
         if resp.status_code != 200:
-            console.print(f"[bold red]Warmup failed ({resp.status_code}):[/bold red] {resp.text[:200]}")
+            console.print(
+                f"[bold red]Warmup failed ({resp.status_code}):[/bold red] {resp.text[:200]}"
+            )
             return None
         return elapsed
     except requests.RequestException as e:
@@ -44,12 +48,22 @@ def unload_model(base_url: str, model_name: str) -> bool:
     # 400 "Model not loaded" is fine — nothing to free.
     if resp.status_code == 400 and "not loaded" in resp.text.lower():
         return True
-    console.print(f"[yellow]Unload {model_name}: {resp.status_code} {resp.text[:200]}[/yellow]")
+    console.print(
+        f"[yellow]Unload {model_name}: {resp.status_code} {resp.text[:200]}[/yellow]"
+    )
     return False
 
 
-def test_omlx(base_url: str, model_name: str, prompt: str, max_tokens: int = 512, verbose: bool = False):
-    console.print(f"[bold blue]--- Testing omlx: {model_name} @ {base_url} ---[/bold blue]")
+def test_omlx(
+    base_url: str,
+    model_name: str,
+    prompt: str,
+    max_tokens: int = 512,
+    verbose: bool = False,
+) -> float | None:
+    console.print(
+        f"[bold blue]--- Testing omlx: {model_name} @ {base_url} ---[/bold blue]"
+    )
     url = f"{base_url.rstrip('/')}/v1/chat/completions"
     payload = {
         "model": model_name,
@@ -73,7 +87,9 @@ def test_omlx(base_url: str, model_name: str, prompt: str, max_tokens: int = 512
 
             console.print(f"[cyan]Generated Tokens:[/cyan] {tokens}")
             console.print(f"[cyan]Duration:[/cyan] {duration:.2f}s")
-            console.print(f"[bold magenta]Tokens/sec (wall clock):[/bold magenta] {tps:.2f}")
+            console.print(
+                f"[bold magenta]Tokens/sec (wall clock):[/bold magenta] {tps:.2f}"
+            )
 
             if verbose:
                 content = data["choices"][0]["message"]["content"]
@@ -81,23 +97,37 @@ def test_omlx(base_url: str, model_name: str, prompt: str, max_tokens: int = 512
 
             return tps
         else:
-            console.print(f"[bold red]omlx error: {response.status_code} - {response.text}[/bold red]")
+            console.print(
+                f"[bold red]omlx error: {response.status_code} - {response.text}[/bold red]"
+            )
             return None
     except requests.exceptions.ConnectionError:
-        console.print(f"[bold red]Could not connect to omlx at {base_url}. Is it running?[/bold red]")
+        console.print(
+            f"[bold red]Could not connect to omlx at {base_url}. Is it running?[/bold red]"
+        )
         return None
 
 
 @app.command()
 def benchmark(
-    models: list[str] = typer.Argument(..., help="omlx model name(s) to benchmark (e.g. model1 model2)"),
+    models: list[str] = typer.Argument(
+        ..., help="omlx model name(s) to benchmark (e.g. model1 model2)"
+    ),
     omlx_url: str = typer.Option("http://127.0.0.1:8000", help="omlx base URL"),
-    prompt: str = typer.Option("Write a 200-word introduction to quantum computing for a 10-year-old.", help="Prompt to use"),
+    prompt: str = typer.Option(
+        "Write a 200-word introduction to quantum computing for a 10-year-old.",
+        help="Prompt to use",
+    ),
     max_tokens: int = typer.Option(512, help="Max tokens to generate"),
-    warmup: bool = typer.Option(True, help="Warm up each model before timing (excludes cold-load from tokens/sec)"),
-    unload: bool = typer.Option(True, help="Unload each model after testing to free memory before the next"),
+    warmup: bool = typer.Option(
+        True,
+        help="Warm up each model before timing (excludes cold-load from tokens/sec)",
+    ),
+    unload: bool = typer.Option(
+        True, help="Unload each model after testing to free memory before the next"
+    ),
     verbose: bool = typer.Option(False, help="Show verbose output"),
-):
+) -> None:
     """
     Benchmark omlx model(s) sequentially: load -> test -> unload -> next.
     """
