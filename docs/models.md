@@ -119,6 +119,50 @@ model is **also 256k** — `config.json` `text_config.max_position_embeddings=26
 (an earlier note claimed 128k; that was wrong). omlx respects the model config
 and loads this window automatically.
 
+## Staying current
+
+### Checking whether a local snapshot is stale
+
+`make model-download` writes HF metadata under `<model_dir>/.cache/huggingface/`.
+The first line of any `*.metadata` file is the commit hash the snapshot came
+from, so it can be compared against the repo's current HEAD without
+re-downloading anything:
+
+```bash
+for d in models/*/; do
+  local_rev=$(head -1 "$(find "$d.cache/huggingface" -name '*.metadata' | head -1)" 2>/dev/null)
+  repo="mlx-community/$(basename "$d" | sed 's/^mlx-community__//')"
+  remote_rev=$(curl -s "https://huggingface.co/api/models/$repo" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("sha",""))')
+  [ "$local_rev" = "$remote_rev" ] && echo "current  $repo" || echo "STALE    $repo"
+done
+```
+
+### Audit 2026-08-16
+
+All six deployed models were at their repo's HEAD; nothing had been re-uploaded
+since download.
+
+| Model | Repo last updated |
+|---|---|
+| `Qwen3.6-35B-A3B-nvfp4` | 2026-04-16 |
+| `gemma-4-26B-A4B-it-qat-nvfp4` | 2026-06-05 |
+| `Qwen3-Embedding-4B-4bit-DWQ` | 2025-06-07 |
+| `Qwen3-Reranker-0.6B-4bit` | 2026-06-06 |
+| `Qwen3-ASR-1.7B-8bit` | 2026-01-29 |
+| `Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit` | 2026-01-26 |
+
+**No upgrade was taken, and none is available for the main slot.** There is
+still no Qwen MoE newer than Qwen3.6 — Qwen3.8-27B is *dense*, not a successor,
+and measured 4–5× slower (see [performance.md](./performance.md)). Surveyed and
+not taken:
+
+| Candidate | Why not |
+|---|---|
+| `NVIDIA-Nemotron-3.5-Lightning-30B-A3B-mxfp4` (2026-08-11) | The only same-shape A3B MoE alternative, so plausibly comparable speed — but a different vendor and quality profile. A capability trade, not an upgrade; unbenchmarked here |
+| `Qwen3.6-35B-A3B-OptiQ-4bit` (2026-07-14) | Quality-only under omlx. Its speedup rides on the `optiq/mtp.safetensors` sidecar omlx cannot load, so that 1.64 GB is dead weight on top of +1.7 GB of core weights (see the OptiQ note below) |
+| `Qwen3-VL-Embedding-8B` / `-2B`, `Qwen3-VL-Reranker-2B` | Newer than the deployed text-only pair, but multimodal retrieval is a *new capability*, not an upgrade. Worth considering given the main model is itself a VLM |
+| `nemotron-3.5-asr-streaming-0.6b` (2026-06-05) | Streaming ASR is a genuine advantage, but it is smaller (0.6B vs 1.7B) and the reason Qwen3-ASR was chosen is its Chinese/multilingual quality — would need measuring before switching |
+
 ## Model-selection findings
 
 ### DiffusionGemma is NOT a newer Gemma 4
