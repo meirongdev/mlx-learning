@@ -38,6 +38,32 @@ The **On disk** column reflects state after the 2026-06-28 M5 cleanup.
 | `mlx-community__gemma-4-26B-A4B-it-qat-assistant-nvfp4` | QAT NVFP4 | ~0.26 GB | —    | M2 Pro (unused) | Google's official Gemma 4 MTP drafter (`gemma4_assistant`). **Benchmarked and rejected — cost 12%.** Safe to delete |
 | `mlx-community__diffusiongemma-26B-A4B-it-4bit`     | std 4bit     | ~15 GB | 256k    | M2 Pro (unused) | **Separate model, not a Gemma 4 version** (see below). **Benchmarked and rejected — 14.3 vs 44.3 tok/s.** Still listed in `/v1/models`, so a client can pick it and get 3× slower replies. Safe to delete |
 
+### Qwen3.8-27B (dense) — evaluated as a second model, not deployed
+
+Added to the M2 Pro 2026-08-16 for the capability jump (Terminal-Bench 2.1
+63.4→73.0, DeepSWE 1.1 13.3→42.2, OSWorld-Verified 63.9→84.3, native vision),
+**not** for speed: the whole family runs 4–5× slower than the deployed MoE.
+It is a VLM (`Qwen3_5ForConditionalGeneration` + `vision_config`), so omlx loads
+it through `VLMBatchedEngine`.
+
+| Model dir | Quantization | Size | On disk | Notes |
+|---|---|---|---|---|
+| `mlx-community__Qwen3.8-27B-mxfp4` | mxfp4, gs 32 | ~14 GB | M2 Pro | **Best bare: 11.75 tok/s (code, 1024).** Use for coding/agentic with MTP off |
+| `mlx-community__Qwen3.8-27B-nvfp4` | nvfp4, gs 16 | ~15 GB | M2 Pro | **Best with MTP: 14.29 tok/s** (general, 1024) paired with `MTP-nvfp4` |
+| `mlx-community__Qwen3.8-27B-4bit` | affine, gs 64 | ~15 GB | M2 Pro | Superseded by mxfp4 bare (11.45 vs 11.75). Worst under MTP (−22%) |
+| `mlx-community__Qwen3.8-27B-MTP-nvfp4` | nvfp4, gs 16 | ~253 MB | M2 Pro | **The drafter to use.** Pairs with `-nvfp4` |
+| `mlx-community__Qwen3.8-27B-MTP-mxfp4` | mxfp4, gs 32 | ~241 MB | M2 Pro (unused) | Only +11% on general, net loss on code |
+| `mlx-community__Qwen3.8-27B-MTP-bf16` | none | ~829 MB | M2 Pro (unused) | **Rejected** — 3.4× the size buys no acceptance. Safe to delete |
+| `mlx-community__Qwen3.8-27B-MTP-4bit` | affine, gs 64 | ~253 MB | M2 Pro (unused) | **Rejected** — costs 22%. Safe to delete |
+
+Drafters are auto-detected as helpers (`HELPER_CONFIG_MODEL_TYPE_SUFFIXES =
+("_assistant", "_mtp")`) and stay hidden from `/v1/models` given
+`hide_helper_models: true`.
+
+Excluded by the 32 GB wired limit: `-8bit` (29.53 GB), `-mxfp8` (28.69 GB),
+`-bf16` (54.74 GB). Untested: `-OptiQ-4bit` — but see the OptiQ note below;
+omlx cannot load the sidecar its speedup depends on.
+
 ## Endpoint requirements
 
 ### `/v1/embeddings` and `/v1/rerank` need two different models

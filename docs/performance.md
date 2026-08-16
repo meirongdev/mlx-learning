@@ -82,6 +82,37 @@ models fast on a bandwidth-bound Mac is exactly what makes parallel decoding
 expensive. "Speculation beats the bandwidth limit" is a **dense-model** rule and
 inverts here.
 
+### …but on dense models it only half-holds
+
+That closing claim was tested on an actual dense model (Qwen3.8-27B, 2026-08-16,
+omlx 0.5.7) and came back **half-confirmed**. Speculation stops being
+structurally doomed — MTP produced a real **+12–28% on general text**, which
+never happened on any MoE — but it is not a reliable win either. On a
+bandwidth-bound Mac the M=4 verify forward is expensive enough that MTP needs
+roughly **≥2.0 accepted tokens/round** to break even, and code generation
+delivers only 1.69–1.88, making it a **net loss (−5 to −10%) on code**.
+
+**Revised rule: on dense models speculation can pay, but only above ~2.0
+accepted tokens/round — measure acceptance from omlx's `vlm_mtp stats` log line
+before trusting it.** On MoE it remains a flat no.
+
+Two follow-up levers were measured and both are dead ends:
+
+- **A higher-precision drafter does not help.** Holding the base fixed and
+  swapping the 4-bit draft head for an unquantized bf16 one (241 MB → 829 MB)
+  moved acceptance by at most a few percent, in the *wrong* direction on general
+  text (−11.8% tok/s). Draft quality is limited by the single-layer MTP
+  architecture (`mtp_num_hidden_layers: 1`, `block_size: 3`), not by storage
+  precision.
+- **Verify cost orders monotonically by quantization group size.** At
+  indistinguishable acceptance (2.42 vs 2.41), `nvfp4` gs16 gained +28% while
+  `mxfp4` gs32 gained only +11%; `affine` gs64 lost 22%. Under MTP, prefer the
+  smallest-group quantization available. (Mode and group size are confounded in
+  this family, so the causal attribution to group size is not established.)
+
+Full data: [`benchmarks/m2pro-qwen38-27b-mtp-20260816.md`](./benchmarks/m2pro-qwen38-27b-mtp-20260816.md)
+and [`benchmarks/m2pro-qwen38-27b-mxfp4-mtp-20260816.md`](./benchmarks/m2pro-qwen38-27b-mxfp4-mtp-20260816.md).
+
 The Gemma row is the strongest evidence — it used Google's own purpose-built
 drafter (`google/gemma-4-26B-A4B-it-assistant`, 246k downloads,
 `model_type: gemma4_assistant`, 0.27 GB, first-class omlx support), so "the
@@ -100,7 +131,7 @@ Qwen3.6-35B-A3B, warmup + 512-token generation.
 
 | Machine      | Bandwidth   | Best quant | tok/s | Notes |
 |--------------|-------------|------------|------:|-------|
-| M2 Pro 32 GB | 200 GB/s    | NVFP4 | **57.9 warm** (omlx 0.5.4rc1) | 2026-08-01. On 0.4.x this box measured 45.89 / 45.36 / 45.36 — all tied. **The 0.5.4rc1 upgrade alone added +27%**; only NVFP4 was re-measured on 0.5.x |
+| M2 Pro 32 GB | 200 GB/s    | NVFP4 | **58.04 warm** (omlx 0.5.7) | 2026-08-16. Was 57.9 on 0.5.4rc1 — flat across that upgrade. On 0.4.x this box measured 45.89 / 45.36 / 45.36, all tied; **the 0.4.x → 0.5.4rc1 upgrade alone added +27%** |
 | M5 32 GB     | 153.6 GB/s  | NVFP4 | **39.74 cold / 49.14 warm** | omlx 0.4.x, not re-measured on 0.5.x. DWQ: 31.33 cold / 32.11 warm |
 
 Gemma 4 (`gemma-4-26B-A4B-it-qat-nvfp4`): **44.3 tok/s warm** on M2 Pro /

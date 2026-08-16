@@ -24,8 +24,12 @@ anything. Reference material lives in `docs/` and is meant to be read on demand.
    Measured three ways on 2026-08-01 — DFlash −19…−29%, Google's own Gemma MTP
    assistant −12%, DiffusionGemma −68%. On a sparse MoE, processing N positions
    per forward pass activates the *union* of experts across those positions, so
-   the weight read grows with N. This is a dense-model optimization that inverts
-   here. Full data: [docs/performance.md](./docs/performance.md).
+   the weight read grows with N.
+   **On a dense model it can pay, but only above ~2.0 accepted tokens/round**
+   (measured 2026-08-16 on Qwen3.8-27B: +12–28% on general text, −5…−10% on
+   code) — check omlx's `vlm_mtp stats` log line before trusting it, and note
+   `vlm_mtp_enabled` conflicts with TurboQuant KV, which the default model uses.
+   Full data: [docs/performance.md](./docs/performance.md).
 3. **`make omlx-restart` after every `brew upgrade omlx`** — see the trap below.
 4. **Never `pip install` to fix a failing omlx endpoint.** The deps ship inside
    the Homebrew build; a 500 means you're on a stale server, not a missing package.
