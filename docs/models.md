@@ -40,29 +40,40 @@ The **On disk** column reflects state after the 2026-06-28 M5 cleanup.
 
 ### Qwen3.8-27B (dense) — evaluated as a second model, not deployed
 
-Added to the M2 Pro 2026-08-16 for the capability jump (Terminal-Bench 2.1
-63.4→73.0, DeepSWE 1.1 13.3→42.2, OSWorld-Verified 63.9→84.3, native vision),
-**not** for speed: the whole family runs 4–5× slower than the deployed MoE.
-It is a VLM (`Qwen3_5ForConditionalGeneration` + `vision_config`), so omlx loads
-it through `VLMBatchedEngine`.
+Evaluated 2026-08-16 for the capability jump (Terminal-Bench 2.1 63.4→73.0,
+DeepSWE 1.1 13.3→42.2, OSWorld-Verified 63.9→84.3, native vision), **not** for
+speed: the whole family runs 4–5× slower than the deployed MoE. It is a VLM
+(`Qwen3_5ForConditionalGeneration` + `vision_config`), so omlx loads it through
+`VLMBatchedEngine` — which is why the MTP fast-verify kernel never arms for it.
+
+**One checkpoint kept as a standby: `mxfp4`.** Six others were downloaded,
+benchmarked, and deleted 2026-08-16 (~31.5 GB reclaimed).
 
 | Model dir | Quantization | Size | On disk | Notes |
 |---|---|---|---|---|
-| `mlx-community__Qwen3.8-27B-mxfp4` | mxfp4, gs 32 | ~14 GB | M2 Pro | **Best bare: 11.75 tok/s (code, 1024).** Use for coding/agentic with MTP off |
-| `mlx-community__Qwen3.8-27B-nvfp4` | nvfp4, gs 16 | ~15 GB | M2 Pro | **Best with MTP: 14.29 tok/s** (general, 1024) paired with `MTP-nvfp4` |
-| `mlx-community__Qwen3.8-27B-4bit` | affine, gs 64 | ~15 GB | M2 Pro | Superseded by mxfp4 bare (11.45 vs 11.75). Worst under MTP (−22%) |
-| `mlx-community__Qwen3.8-27B-MTP-nvfp4` | nvfp4, gs 16 | ~253 MB | M2 Pro | **The drafter to use.** Pairs with `-nvfp4` |
-| `mlx-community__Qwen3.8-27B-MTP-mxfp4` | mxfp4, gs 32 | ~241 MB | M2 Pro (unused) | Only +11% on general, net loss on code |
-| `mlx-community__Qwen3.8-27B-MTP-bf16` | none | ~829 MB | — | **Rejected and deleted 2026-08-16** — 3.4× the size buys no acceptance |
-| `mlx-community__Qwen3.8-27B-MTP-4bit` | affine, gs 64 | ~253 MB | — | **Rejected and deleted 2026-08-16** — costs 22% |
+| `mlx-community__Qwen3.8-27B-mxfp4` | mxfp4, gs 32 | ~14 GB | **M2 Pro** | **The one kept.** Best bare in every cell (11.48–11.83); run it with MTP off |
+| `mlx-community__Qwen3.8-27B-nvfp4` | nvfp4, gs 16 | ~15 GB | — | Deleted. Higher peak (14.29) but only *with* a drafter and only on redundant general text; bare it loses to mxfp4 everywhere |
+| `mlx-community__Qwen3.8-27B-4bit` | affine, gs 64 | ~15 GB | — | Deleted. Superseded by mxfp4 bare (11.45 vs 11.75); worst under MTP (−22%) |
+| `mlx-community__Qwen3.8-27B-MTP-nvfp4` | nvfp4, gs 16 | ~253 MB | — | Deleted with its base model. Was the only drafter worth pairing |
+| `mlx-community__Qwen3.8-27B-MTP-mxfp4` | mxfp4, gs 32 | ~241 MB | — | Deleted. Only +11% on general, net loss on code |
+| `mlx-community__Qwen3.8-27B-MTP-bf16` | none | ~829 MB | — | Deleted. 3.4× the size buys no acceptance |
+| `mlx-community__Qwen3.8-27B-MTP-4bit` | affine, gs 64 | ~253 MB | — | Deleted. Costs 22% |
 
+**Why keep `mxfp4` and not the faster-peaking `nvfp4` pair?** Peak throughput
+needs the drafter, i.e. two checkpoints plus a settings change; and
+`vlm_mtp_enabled` conflicts with TurboQuant KV, which the default model uses.
+For a single standby, bare speed is what matters, and bare `nvfp4` (10.96–11.16)
+loses to bare `mxfp4` (11.48–11.83) in every cell. The MTP peak also lands on
+the workload this model is *least* wanted for — it is a net loss on code.
+
+Restore any of the deleted ones with `make model-download MODEL_REPO=...`.
 Drafters are auto-detected as helpers (`HELPER_CONFIG_MODEL_TYPE_SUFFIXES =
 ("_assistant", "_mtp")`) and stay hidden from `/v1/models` given
 `hide_helper_models: true`.
 
-Excluded by the 32 GB wired limit: `-8bit` (29.53 GB), `-mxfp8` (28.69 GB),
-`-bf16` (54.74 GB). Untested: `-OptiQ-4bit` — but see the OptiQ note below;
-omlx cannot load the sidecar its speedup depends on.
+Never downloaded — excluded by the 32 GB wired limit: `-8bit` (29.53 GB),
+`-mxfp8` (28.69 GB), `-bf16` (54.74 GB). Untested: `-OptiQ-4bit`, but see the
+OptiQ note below — omlx cannot load the sidecar its speedup depends on.
 
 ## Endpoint requirements
 
