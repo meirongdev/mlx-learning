@@ -46,12 +46,16 @@ speed: the whole family runs 4–5× slower than the deployed MoE. It is a VLM
 (`Qwen3_5ForConditionalGeneration` + `vision_config`), so omlx loads it through
 `VLMBatchedEngine` — which is why the MTP fast-verify kernel never arms for it.
 
-**One checkpoint kept as a standby: `mxfp4`.** Six others were downloaded,
-benchmarked, and deleted 2026-08-16 (~31.5 GB reclaimed).
+**Nothing from this family is on disk.** All seven checkpoints were downloaded,
+benchmarked, and removed 2026-08-16 (~45.5 GB reclaimed) — the M2 Pro keeps only
+`Qwen3.6-35B-A3B-nvfp4` for inference, which is 4–5× faster and, unlike what the
+name suggests, **also serves vision** (`Qwen3_5MoeForConditionalGeneration` with
+a `vision_config`; verified end-to-end). The rows below are kept so the options
+are not silently retried.
 
 | Model dir | Quantization | Size | On disk | Notes |
 |---|---|---|---|---|
-| `mlx-community__Qwen3.8-27B-mxfp4` | mxfp4, gs 32 | ~14 GB | **M2 Pro** | **The one kept.** Best bare in every cell (11.48–11.83); run it with MTP off |
+| `mlx-community__Qwen3.8-27B-mxfp4` | mxfp4, gs 32 | ~14 GB | — | Deleted last, after being kept briefly as a standby. Best bare in every cell (11.48–11.83); if the family is ever revisited, start here with MTP off |
 | `mlx-community__Qwen3.8-27B-nvfp4` | nvfp4, gs 16 | ~15 GB | — | Deleted. Higher peak (14.29) but only *with* a drafter and only on redundant general text; bare it loses to mxfp4 everywhere |
 | `mlx-community__Qwen3.8-27B-4bit` | affine, gs 64 | ~15 GB | — | Deleted. Superseded by mxfp4 bare (11.45 vs 11.75); worst under MTP (−22%) |
 | `mlx-community__Qwen3.8-27B-MTP-nvfp4` | nvfp4, gs 16 | ~253 MB | — | Deleted with its base model. Was the only drafter worth pairing |
@@ -59,14 +63,15 @@ benchmarked, and deleted 2026-08-16 (~31.5 GB reclaimed).
 | `mlx-community__Qwen3.8-27B-MTP-bf16` | none | ~829 MB | — | Deleted. 3.4× the size buys no acceptance |
 | `mlx-community__Qwen3.8-27B-MTP-4bit` | affine, gs 64 | ~253 MB | — | Deleted. Costs 22% |
 
-**Why keep `mxfp4` and not the faster-peaking `nvfp4` pair?** Peak throughput
-needs the drafter, i.e. two checkpoints plus a settings change; and
-`vlm_mtp_enabled` conflicts with TurboQuant KV, which the default model uses.
-For a single standby, bare speed is what matters, and bare `nvfp4` (10.96–11.16)
-loses to bare `mxfp4` (11.48–11.83) in every cell. The MTP peak also lands on
-the workload this model is *least* wanted for — it is a net loss on code.
+**If the family is ever revisited, start from `mxfp4`, not the faster-peaking
+`nvfp4` pair.** Peak throughput needs the drafter, i.e. two checkpoints plus a
+settings change, and `vlm_mtp_enabled` conflicts with TurboQuant KV, which the
+default model uses. On bare speed — the thing that matters without a drafter —
+`nvfp4` (10.96–11.16) loses to `mxfp4` (11.48–11.83) in every cell. The MTP peak
+also lands on the workload this model is *least* wanted for: it is a net loss on
+code.
 
-Restore any of the deleted ones with `make model-download MODEL_REPO=...`.
+Restore any of these with `make model-download MODEL_REPO=...`.
 Drafters are auto-detected as helpers (`HELPER_CONFIG_MODEL_TYPE_SUFFIXES =
 ("_assistant", "_mtp")`) and stay hidden from `/v1/models` given
 `hide_helper_models: true`.
