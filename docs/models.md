@@ -53,8 +53,8 @@ it through `VLMBatchedEngine`.
 | `mlx-community__Qwen3.8-27B-4bit` | affine, gs 64 | ~15 GB | M2 Pro | Superseded by mxfp4 bare (11.45 vs 11.75). Worst under MTP (−22%) |
 | `mlx-community__Qwen3.8-27B-MTP-nvfp4` | nvfp4, gs 16 | ~253 MB | M2 Pro | **The drafter to use.** Pairs with `-nvfp4` |
 | `mlx-community__Qwen3.8-27B-MTP-mxfp4` | mxfp4, gs 32 | ~241 MB | M2 Pro (unused) | Only +11% on general, net loss on code |
-| `mlx-community__Qwen3.8-27B-MTP-bf16` | none | ~829 MB | M2 Pro (unused) | **Rejected** — 3.4× the size buys no acceptance. Safe to delete |
-| `mlx-community__Qwen3.8-27B-MTP-4bit` | affine, gs 64 | ~253 MB | M2 Pro (unused) | **Rejected** — costs 22%. Safe to delete |
+| `mlx-community__Qwen3.8-27B-MTP-bf16` | none | ~829 MB | — | **Rejected and deleted 2026-08-16** — 3.4× the size buys no acceptance |
+| `mlx-community__Qwen3.8-27B-MTP-4bit` | affine, gs 64 | ~253 MB | — | **Rejected and deleted 2026-08-16** — costs 22% |
 
 Drafters are auto-detected as helpers (`HELPER_CONFIG_MODEL_TYPE_SUFFIXES =
 ("_assistant", "_mtp")`) and stay hidden from `/v1/models` given
