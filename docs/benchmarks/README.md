@@ -1,8 +1,10 @@
 # Benchmark results
 
-Raw `mlx-bench` logs, one file per run. Filenames encode `<machine>-<comparison>-<max_tokens>-<UTC date>.log`.
+Written-up `mlx-bench` runs. This file is the running summary; each `<machine>-<comparison>-<date>.md` is a full report for one investigation.
 
-This repo ships across two dev machines, so each result must record which one produced it. Always pair a new bench with `make detect-machine` output (already printed in the log header by `make bench`).
+Raw per-run `.log` output from the 2026-05-03 batch was pruned once its conclusions landed here and in `../performance.md` — write results up rather than accumulating logs.
+
+This repo ships across two dev machines, so each result must record which one produced it. Always pair a new bench with `make detect-machine` output (already printed in the header by `make bench`).
 
 ## Running
 
@@ -17,11 +19,10 @@ make omlx-status   # or: make omlx-start
 uv run mlx-bench mlx-community__Qwen3.6-35B-A3B-4bit-DWQ \
                  mlx-community__Qwen3.6-35B-A3B-nvfp4
 
-# Save under bench-results/ with a date-stamped name.
-uv run mlx-bench <model1> <model2> --max-tokens 1024 \
-  | tee bench-results/$(./scripts/detect_machine.sh --quiet \
-       | awk -F= '/MACHINE_CHIP_SHORT/ {gsub(/'\''/, "", $2); print tolower($2)}')-$(date +%Y%m%d-%H%M%S).log
+# Or just: make bench   (uses this machine's MODEL_REPO; BENCH_MODELS/BENCH_ARGS to override)
 ```
+
+Write the conclusion up as a dated `.md` in this directory and fold the headline number into [`../performance.md`](../performance.md). Don't commit raw run logs.
 
 ## Summary so far
 
@@ -87,13 +88,13 @@ DWQ is the outlier: M5 is ~22% slower than M2 Pro on DWQ (35.27 vs 45.36), likel
 
 vllm-mlx is **5–10% faster** on text LLMs and stays ahead but converges as warmup completes — the steady-state ceiling on this M5 is ~52 tok/s (bandwidth-bound for both). The win mostly comes from start-up / paged-cache scheduling, not steady-state kernel efficiency.
 
-**Gemma 4 26B (VLM): vllm-mlx is broken.** Both `--mllm` and auto-detected MLLM paths crash with `RuntimeError: There is no Stream(gpu, 0) in current thread` from `mlx_vlm/generate.py`. Streaming returns empty completions silently. omlx serves Gemma 4 fine at ~38 tok/s. Detailed report and traceback: `m5-omlx-vs-vllm-mlx-nvfp4-20260503.md` + `vllm-mlx-server-logs/`.
+**Gemma 4 26B (VLM): vllm-mlx 0.2.9 is broken.** Both `--mllm` and auto-detected MLLM paths crash with `RuntimeError: There is no Stream(gpu, 0) in current thread` from `mlx_vlm/generate.py`. Streaming returns empty completions silently. omlx serves Gemma 4 fine at ~38 tok/s. Detailed report and traceback: `m5-omlx-vs-vllm-mlx-nvfp4-20260503.md`. **Fixed in vllm-mlx 0.3.0** (re-tested 2026-06-07 on M5, ~30 tok/s @ 512).
 
-**M2 Pro: pending.** Re-run the same comparison on the 200 GB/s box; expectation is that the gap shrinks because M2 Pro is more bandwidth-bound and both engines hit the same ceiling.
+**M2 Pro:** done — see `m2pro-omlx-vs-vllm-mlx-20260503.md`. The gap was *larger*, not smaller (+28% for vllm-mlx on std 4bit / NVFP4), but it closed entirely once omlx reached 0.5.4rc1 (57.9 vs 58.8 tok/s). See [`../performance.md`](../performance.md).
 
 ## Methodology notes
 
 - **Prefill is included in tok/s.** `mlx-bench` measures wall-clock from request → response, so the published number includes prompt processing. With the default ~30-token prompt and 512+ generated tokens, prefill is a small share (<5%).
 - **Models are unloaded between runs** so KV cache doesn't carry over. Cold load times in the log are first-time-from-disk after install; OS file cache may make subsequent loads faster.
 - **GPU wired memory limit** matters at 32 GB. Always check `make detect-machine` shows `GPU wired limit: 26000+ MB` before benchmarking.
-- **omlx server flags** (defined in Makefile `OMLX_EXTRA_ARGS`): `--max-process-memory 90% --hot-cache-max-size 4GB --max-concurrent-requests 2 --initial-cache-blocks 1024`. Changing these would invalidate comparisons.
+- **omlx server config.** The 2026-05-03 runs used `--max-process-memory 90% --hot-cache-max-size 4GB --max-concurrent-requests 2 --initial-cache-blocks 1024`; `--max-process-memory` was removed in omlx 0.4.x (now `--memory-guard`). Changing these invalidates comparisons — and note that on these machines the *live* server reads `~/.omlx/settings.json`, not the Makefile flags, so record what `settings.json` actually held.
