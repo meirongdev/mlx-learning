@@ -62,22 +62,18 @@ dmypy.json
 # Ruff
 .ruff_cache/
 
-# MLX
+# MLX — model snapshots and server PID/log files
 mlx_model/
 models/
 models_cache/
-mlx-server.log
 mlx-server.pid
-mlx-vlm-server.log
-mlx-proxy.pid
-mlx-proxy.log
+mlx-server.log
 omlx-server.pid
 omlx-server.log
-vllm-mlx.log
-vllm-mlx.pid
 vllm-server.pid
 vllm-server.log
-bench-results/vllm-mlx-server-*.log
+docs/benchmarks/*.log
+docs/benchmarks/*.jsonl
 
 # stable-diffusion.cpp
 bin/

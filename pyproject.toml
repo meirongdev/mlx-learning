@@ -9,14 +9,15 @@ description = "A benchmark and learning tool for MLX on Apple Silicon"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
-    { name = "Your Name", email = "your.email@example.com" }
+    { name = "Meirong", email = "meirongdev@gmail.com" }
 ]
 license = { file = "LICENSE" }
 dependencies = [
-    "mlx-vlm>=0.6.3",
+    # mlx-bench itself only talks HTTP; these back `make server-start`
+    # (python -m mlx_lm.server / mlx_vlm.server) on the legacy :5001 path.
     "mlx>=0.23.0",
     "mlx-lm>=0.23.0",
-    "openai>=2.32.0",
+    "mlx-vlm>=0.6.3",
     "requests>=2.32.5",
     "rich>=14.3.3",
     "typer>=0.18.0",
@@ -24,8 +25,7 @@ dependencies = [
 
 [project.optional-dependencies]
 server = [
-    "huggingface-hub>=1.10.2",
-    "mlx-vlm>=0.4.4",
+    "huggingface-hub>=1.10.2",  # model-download / sd-model-download
 ]
 
 [project.scripts]

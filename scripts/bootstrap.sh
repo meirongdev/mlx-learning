@@ -56,7 +56,7 @@ fi
 
 if (( MACHINE_WIRED_MB < 16000 )); then
     warn "GPU wired memory limit is low (${MACHINE_WIRED_MB}MB). Performance may suffer."
-    warn "Run 'make optimize-system' to set it to 30000MB (recommended for 32GB RAM Macs)."
+    warn "Run 'make optimize-system' to set it to 30720MB (recommended for 32GB RAM Macs)."
 fi
 
 # --- 2. uv --------------------------------------------------------------------
@@ -119,37 +119,22 @@ else
     ok "omlx installed"
 fi
 
-# --- 6. Start omlx serve ------------------------------------------------------
+# --- 6. Start omlx (and health-check) -----------------------------------------
+# Delegate to scripts/omlx.sh: when omlx is Homebrew-managed it owns :PORT via a
+# KeepAlive LaunchAgent, so starting our own `nohup omlx serve` here would just
+# lose the port race. omlx.sh picks brew-vs-nohup and polls /v1/models for us.
 step "Starting omlx server on ${HOST}:${PORT}"
-# omlx auto-discovers models under the parent directory; use models/ as root
-OMLX_MODEL_DIR="$(dirname "$MODEL_DIR")"
-nohup omlx serve \
-    --model-dir "$OMLX_MODEL_DIR" \
-    --host "$HOST" \
-    --port "$PORT" \
-    --memory-guard aggressive \
-    --hot-cache-max-size 4GB \
-    --max-concurrent-requests 2 \
-    --initial-cache-blocks 1024 >"$REPO_ROOT/omlx-server.log" 2>&1 &
-pid=$!
-echo "$pid" > "$REPO_ROOT/omlx-server.pid"
-ok "omlx started (PID $pid)"
+OMLX_HOST="$HOST" OMLX_PORT="$PORT" \
+OMLX_MODEL_DIR="$(dirname "$MODEL_DIR")" \
+OMLX_LOAD_TIMEOUT=120 \
+    bash "$REPO_ROOT/scripts/omlx.sh" start \
+    || die "omlx did not become healthy on port ${PORT} — check: make omlx-logs"
 
-# --- 7. Health check ----------------------------------------------------------
-step "Waiting for /v1/models to respond (up to 120s)"
-deadline=$(( SECONDS + 120 ))
-while (( SECONDS < deadline )); do
-    if curl -sSf "http://127.0.0.1:${PORT}/v1/models" >/dev/null 2>&1; then
-        ok "omlx is live on http://${HOST}:${PORT}/v1"
-        echo
-        printf '  Model slug for API requests: %s\n' "$MODEL_SLUG"
-        echo
-        echo "  Quick smoke test:"
-        printf '    curl http://127.0.0.1:%s/v1/chat/completions \\\n' "$PORT"
-        echo   "      -H 'Content-Type: application/json' \\"
-        printf '      -d '"'"'{"model":"%s","messages":[{"role":"user","content":"Hi"}],"max_tokens":32}'"'"'\n' "$MODEL_SLUG"
-        exit 0
-    fi
-    sleep 2
-done
-die "omlx did not respond within 120s on port ${PORT} — check: make omlx-logs"
+ok "omlx is live on http://${HOST}:${PORT}/v1"
+echo
+printf '  Model slug for API requests: %s\n' "$MODEL_SLUG"
+echo
+echo "  Quick smoke test:"
+printf '    curl http://127.0.0.1:%s/v1/chat/completions \\\n' "$PORT"
+echo   "      -H 'Content-Type: application/json' \\"
+printf '      -d '"'"'{"model":"%s","messages":[{"role":"user","content":"Hi"}],"max_tokens":32}'"'"'\n' "$MODEL_SLUG"

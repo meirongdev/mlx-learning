@@ -1,12 +1,21 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-UV ?= uv
-PYTHON ?= .venv/bin/python
-HF_TOKEN ?=
+# ─────────────────────────────────────────────────────────────────────────────
+# Shared configuration. Per-stack config lives in make/*.mk (included below).
+#
+# Help text is generated from `## comments` on targets and `##@ Section`
+# markers — annotate a new target and it shows up in `make help` automatically.
+# ─────────────────────────────────────────────────────────────────────────────
+
+UV           ?= uv
+PYTHON       ?= .venv/bin/python
+HF_TOKEN     ?=
 HF_HUB_CACHE ?= $(HOME)/.cache/huggingface/hub
-# Per-machine default model: both M2 Pro and M5 now use omlx. See scripts/detect_machine.sh.
-# Override with `MODEL_REPO=... make <target>`. Falls back to Qwen if detection fails.
+
+# Per-machine default model: both M2 Pro and M5 run omlx, but serve different
+# models. Override with `MODEL_REPO=... make <target>`. Falls back to Qwen if
+# chip detection fails. See scripts/detect_machine.sh.
 MACHINE_CHIP_SHORT ?= $(shell bash scripts/detect_machine.sh --quiet 2>/dev/null | sed -n "s/^MACHINE_CHIP_SHORT='\(.*\)'/\1/p")
 ifeq ($(MACHINE_CHIP_SHORT),M5)
 MODEL_REPO ?= mlx-community/gemma-4-26B-A4B-it-qat-nvfp4
@@ -14,468 +23,64 @@ else
 MODEL_REPO ?= mlx-community/Qwen3.6-35B-A3B-nvfp4
 endif
 MODEL_SLUG ?= $(subst /,__,$(MODEL_REPO))
-MODEL_DIR ?= models/$(MODEL_SLUG)
-# mlx_lm.server for text-only LLMs (Qwen, Llama, ...); mlx_vlm.server for VLMs (Gemma 4, ...)
-SERVER_MODULE ?= mlx_lm.server
-HOST ?= 0.0.0.0
-PORT ?= 5001
-PID_FILE ?= mlx-server.pid
-LOG_FILE ?= mlx-server.log
-LOAD_TIMEOUT ?= 900
-STARTUP_POLL_INTERVAL ?= 5
-STOP_TIMEOUT ?= 30
-EXTRA_SERVER_ARGS ?=
+MODEL_DIR  ?= models/$(MODEL_SLUG)
 
-.PHONY: help quickstart install server-install model-download server-bootstrap server-start server-stop \
-	server-restart server-status server-logs test lint format clean clean-server bench \
-	proxy-start proxy-stop proxy-restart proxy-status proxy-logs verify \
-	omlx-install omlx-start omlx-stop omlx-restart omlx-status omlx-logs optimize-system detect-machine \
-	vllm-install vllm-start vllm-stop vllm-restart vllm-status vllm-logs vllm-bench \
-	sd-install sd-model-download sd-start sd-stop sd-status sd-logs
+include make/model.mk    # model download, machine detection, system tuning
+include make/omlx.mk     # omlx multi-model server (default) + benchmarking
+include make/vllm.mk     # vllm-mlx server (alternative engine)
+include make/sd.mk       # stable-diffusion.cpp server (text-to-image)
+include make/legacy.mk   # mlx_lm.server (legacy, testing only)
 
-help:
-	@printf '%s\n' \
-		'Available targets:' \
-		'  make detect-machine                  - Print chip / RAM / bandwidth (this repo runs on M2 Pro AND M5)' \
-		'  make quickstart                      - One-click: install deps, download MODEL_REPO, start omlx, health-check' \
-		'  make install                         - Install base project dependencies' \
-		'  make server-install                  - Install server dependencies (mlx-lm/mlx-vlm + huggingface_hub)' \
-		'  make model-download                  - Download MODEL_REPO into MODEL_DIR (HF_TOKEN optional for public repos)' \
-		'  make server-bootstrap                - Download the model (if needed) and start the server' \
-		'  make server-start                    - Start the configured model server on HOST:PORT' \
-		'  make server-stop                     - Stop the running model server' \
-		'  make server-restart                  - Restart the running model server' \
-		'  make server-status                   - Show server PID, port, and model info' \
-		'  make server-logs                     - Tail the server log' \
-		'  make proxy-start / -stop / -status / -logs   - Manage OpenAI-compatible proxy on PROXY_PORT' \
-		'  make omlx-start / -stop / -status / -logs   - Manage omlx multi-model server on OMLX_PORT' \
-		'  make vllm-start / -stop / -status / -logs   - Manage vllm-mlx server on VLLM_PORT (default: 8000)' \
-		'  make vllm-bench                      - Benchmark VLLM_MODEL_REPO via mlx-bench (--no-unload)' \
-		'  make sd-install                      - Download sd.cpp ARM64 binary to ./bin/' \
-		'  make sd-model-download               - Download FLUX.2 Klein 4B + VAE + Qwen3-4B encoder' \
-		'  make sd-start / -stop / -status / -logs  - Manage sd.cpp server on SD_PORT (default: 7860)' \
-		'  make optimize-system                 - Optimize macOS GPU wired memory limit (requires sudo)' \
-		'  make bench                           - Run the mlx-bench CLI (pass model names as args)' \
-		'' \
-		'Configurable variables:' \
-		'  MODEL_REPO=$(MODEL_REPO)' \
-		'  MODEL_DIR=$(MODEL_DIR)' \
-		'  SERVER_MODULE=$(SERVER_MODULE)   (use mlx_vlm.server for multimodal models)' \
-		'  HOST=$(HOST)' \
-		'  PORT=$(PORT)' \
-		'  PROXY_PORT=$(PROXY_PORT)' \
-		'' \
-		'Examples:' \
-		'  make quickstart                                          # fresh Mac -> running omlx in one command' \
-		'  make server-bootstrap                                    # uses defaults above' \
-		'  make server-start MODEL_REPO=mlx-community/Qwen3.6-27B-4bit   # dense alternative' \
-		'  make proxy-start                                         # OpenAI-compat shim on :$(PROXY_PORT)'
+.PHONY: help quickstart install server-install test lint format typecheck clean
 
-detect-machine:
-	@bash scripts/detect_machine.sh
+##@ Setup
 
-optimize-system:
-	@echo "Optimizing GPU wired memory limit..."
-	@bash scripts/detect_machine.sh
-	@echo "Current value: $$(sysctl -n iogpu.wired_limit_mb 2>/dev/null || echo 'not set')"
-	@echo "Setting to 30720 (30.0 GB; omlx's recommended cap for 32GB Macs with large models)..."
-	sudo sysctl iogpu.wired_limit_mb=30720
-	@echo "Done."
+help: ## Show this help
+	@awk 'BEGIN {FS = ":.*##"} \
+		/^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5); next } \
+		/^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 }' \
+		$(MAKEFILE_LIST)
+	@printf '\n\033[1mCurrent configuration\033[0m\n'
+	@printf '  %-20s %s\n' \
+		'MODEL_REPO'    '$(MODEL_REPO)' \
+		'MODEL_DIR'     '$(MODEL_DIR)' \
+		'OMLX_PORT'     '$(OMLX_PORT)' \
+		'VLLM_PORT'     '$(VLLM_PORT)' \
+		'SD_PORT'       '$(SD_PORT)' \
+		'PORT (legacy)' '$(PORT)'
+	@printf '\n\033[1mExamples\033[0m\n'
+	@printf '  %s\n' \
+		'make quickstart                                        # fresh Mac -> running omlx' \
+		'make bench BENCH_ARGS="--max-tokens 1024 --no-unload"  # pass flags to mlx-bench' \
+		'make model-download MODEL_REPO=mlx-community/Qwen3-Embedding-4B-4bit-DWQ' \
+		''
 
-quickstart:
+quickstart: ## One-click: deps -> download model -> start omlx -> health-check
 	@MODEL_REPO="$(MODEL_REPO)" MODEL_DIR="$(MODEL_DIR)" \
 		HOST="$(HOST)" PORT="$(PORT)" \
 		HF_TOKEN="$(HF_TOKEN)" \
 		bash scripts/bootstrap.sh
 
-install:
+install: ## Install base project dependencies
 	$(UV) sync
 
-server-install:
+server-install: ## Install serving/download dependencies (--extra server)
 	$(UV) sync --extra server
 
-model-download: server-install
-	@bash scripts/detect_machine.sh
-	@echo "Target: $(MODEL_REPO) -> $(MODEL_DIR)"
-	@mkdir -p "$(dir $(MODEL_DIR))"
-	@HF_TOKEN="$(HF_TOKEN)" MODEL_REPO="$(MODEL_REPO)" MODEL_DIR="$(MODEL_DIR)" $(PYTHON) -c '\
-from pathlib import Path; \
-import os; \
-from huggingface_hub import snapshot_download; \
-repo = os.environ["MODEL_REPO"]; \
-target = Path(os.environ["MODEL_DIR"]); \
-token = os.environ.get("HF_TOKEN") or None; \
-target.mkdir(parents=True, exist_ok=True); \
-print(f"Downloading {repo} -> {target}" + (" (with HF_TOKEN)" if token else " (anonymous)")); \
-snapshot_download(repo_id=repo, token=token, local_dir=target); \
-print(f"Model is ready at {target}")'
+##@ Development
 
-server-bootstrap: model-download server-start
-
-server-start: server-install
-	@if [ ! -d "$(MODEL_DIR)" ]; then \
-		echo "Model directory not found: $(MODEL_DIR)"; \
-		echo "Run: make model-download HF_TOKEN=... MODEL_REPO=$(MODEL_REPO)"; \
-		exit 1; \
-	fi
-	@if [ -f "$(PID_FILE)" ] && kill -0 "$$(cat "$(PID_FILE)")" 2>/dev/null; then \
-		echo "Server already running with PID $$(cat "$(PID_FILE)")"; \
-		exit 0; \
-	fi
-	@if lsof -nP -iTCP:$(PORT) -sTCP:LISTEN >/dev/null 2>&1; then \
-		echo "Port $(PORT) is already in use:"; \
-		lsof -nP -iTCP:$(PORT) -sTCP:LISTEN; \
-		exit 1; \
-	fi
-	@{ \
-			mkdir -p "$(HF_HUB_CACHE)"; \
-			nohup env HF_HUB_CACHE="$(HF_HUB_CACHE)" $(PYTHON) -m $(SERVER_MODULE) \
-				--model "$(MODEL_DIR)" \
-				--host "$(HOST)" \
-				--port "$(PORT)" \
-				$(EXTRA_SERVER_ARGS) >"$(LOG_FILE)" 2>&1 & \
-		pid=$$!; \
-		echo "$$pid" > "$(PID_FILE)"; \
-		echo "Started $(SERVER_MODULE) with PID $$pid"; \
-		deadline=$$((SECONDS + $(LOAD_TIMEOUT))); \
-		while [ $$SECONDS -lt $$deadline ]; do \
-			if ! kill -0 "$$pid" 2>/dev/null; then \
-				echo "Server exited during startup."; \
-				tail -n 200 "$(LOG_FILE)" 2>/dev/null || true; \
-				exit 1; \
-			fi; \
-			if lsof -nP -iTCP:$(PORT) -sTCP:LISTEN >/dev/null 2>&1; then \
-				echo "Server is listening on $(HOST):$(PORT)"; \
-				exit 0; \
-			fi; \
-			sleep "$(STARTUP_POLL_INTERVAL)"; \
-		done; \
-		echo "Timed out waiting for the server to listen on port $(PORT)."; \
-		tail -n 200 "$(LOG_FILE)" 2>/dev/null || true; \
-		exit 1; \
-	}
-
-server-stop:
-	@if [ ! -f "$(PID_FILE)" ]; then \
-		echo "No PID file found at $(PID_FILE)"; \
-		exit 0; \
-	fi
-	@pid=$$(cat "$(PID_FILE)"); \
-	if kill -0 "$$pid" 2>/dev/null; then \
-		kill "$$pid"; \
-		echo "Stopping server PID $$pid"; \
-		deadline=$$((SECONDS + $(STOP_TIMEOUT))); \
-		while kill -0 "$$pid" 2>/dev/null; do \
-			if [ $$SECONDS -ge $$deadline ]; then \
-				echo "PID $$pid did not exit after SIGTERM, sending SIGKILL"; \
-				kill -9 "$$pid"; \
-				break; \
-			fi; \
-			sleep 1; \
-		done; \
-		while lsof -nP -iTCP:$(PORT) -sTCP:LISTEN >/dev/null 2>&1; do \
-			if [ $$SECONDS -ge $$deadline ]; then \
-				echo "Port $(PORT) is still busy after stop timeout"; \
-				lsof -nP -iTCP:$(PORT) -sTCP:LISTEN; \
-				exit 1; \
-			fi; \
-			sleep 1; \
-		done; \
-		echo "Stopped server PID $$pid"; \
-	else \
-		echo "PID $$pid is not running"; \
-	fi
-	@rm -f "$(PID_FILE)"
-
-server-restart: server-stop server-start
-
-server-status:
-	@if [ -f "$(PID_FILE)" ]; then \
-		echo "PID: $$(cat "$(PID_FILE)")"; \
-	else \
-		echo "PID: not running"; \
-	fi
-	@echo "Model repo: $(MODEL_REPO)"
-	@echo "Model dir:  $(MODEL_DIR)"
-	@echo "Server:     $(SERVER_MODULE)"
-	@echo "Endpoint:   http://127.0.0.1:$(PORT)"
-	@lsof -nP -iTCP:$(PORT) -sTCP:LISTEN || true
-
-server-logs:
-	@tail -n 200 "$(LOG_FILE)"
-
-test:
+test: ## Run the test suite
 	$(UV) run pytest
 
-lint:
+lint: ## Lint with ruff
 	$(UV) run ruff check .
 
-format:
+format: ## Format with ruff
 	$(UV) run ruff format .
 
-clean-server:
-	rm -f "$(PID_FILE)" "$(LOG_FILE)"
+typecheck: ## Type-check with mypy (strict)
+	$(UV) run mypy .
 
-clean: clean-server
-	rm -rf .venv
-	rm -rf .pytest_cache
-	rm -rf .ruff_cache
-	rm -rf __pycache__
+clean: clean-server ## Remove venv, caches, and server PID/log files
+	rm -rf .venv .pytest_cache .ruff_cache .mypy_cache
 	find . -type d -name "__pycache__" -exec rm -rf {} +
-
-bench:
-	@bash scripts/detect_machine.sh
-	$(UV) run mlx-bench
-
-# OpenAI-compatible proxy to MLX server
-PROXY_PORT ?= 5101
-PROXY_HOST ?= 0.0.0.0
-PROXY_PID ?= mlx-proxy.pid
-PROXY_LOG ?= mlx-proxy.log
-MLX_BASE ?= http://127.0.0.1:$(PORT)
-
-proxy-start:
-	@echo "Starting OpenAI-compat proxy on $(PROXY_HOST):$(PROXY_PORT) -> $(MLX_BASE) (default model: $(MODEL_DIR))"
-	@if [ -f "$(PROXY_PID)" ] && kill -0 "$$(cat "$(PROXY_PID)")" 2>/dev/null; then \
-		echo "Proxy already running with PID $$(cat "$(PROXY_PID)")"; exit 0; \
-	fi
-	@nohup $(PYTHON) scripts/openai_proxy.py \
-		--host $(PROXY_HOST) \
-		--port $(PROXY_PORT) \
-		--mlx-base $(MLX_BASE) \
-		--default-model "$(MODEL_DIR)" >"$(PROXY_LOG)" 2>&1 & \
-	pid=$$!; echo "$$pid" > "$(PROXY_PID)"; echo "Started proxy PID $$pid"
-
-proxy-stop:
-	@if [ -f "$(PROXY_PID)" ]; then \
-		pid=$$(cat "$(PROXY_PID)"); \
-		if kill -0 "$$pid" 2>/dev/null; then kill "$$pid"; echo "Stopped proxy PID $$pid"; fi; \
-		rm -f "$(PROXY_PID)"; \
-	else \
-		echo "No proxy PID file"; \
-	fi
-
-proxy-restart: proxy-stop proxy-start
-
-proxy-status:
-	@echo "Proxy PID file: $(PROXY_PID)"; if [ -f "$(PROXY_PID)" ]; then echo "PID: $$(cat $(PROXY_PID))"; fi; lsof -nP -iTCP:$(PROXY_PORT) -sTCP:LISTEN || true
-
-proxy-logs:
-	@tail -n 200 "$(PROXY_LOG)"
-
-verify:
-	@$(PYTHON) scripts/verify_model.py --base http://127.0.0.1:$(PORT) --model "$(MODEL_DIR)"
-
-# omlx multi-model OpenAI-compatible server
-OMLX_HOST ?= 0.0.0.0
-OMLX_PORT ?= 8000
-OMLX_MODEL_DIR ?= models
-OMLX_PID ?= omlx-server.pid
-OMLX_LOG ?= omlx-server.log
-# NOTE: the live deployment on these Macs is a Homebrew LaunchAgent (KeepAlive=true)
-# that runs bare `omlx serve` and reads ALL config from ~/.omlx/settings.json.
-# OMLX_EXTRA_ARGS below is therefore used ONLY by the nohup source-install fallback
-# in scripts/omlx.sh — the brew service ignores it. To change live behavior edit
-# ~/.omlx/settings.json and `make omlx-restart`.
-# omlx 0.4.x: --max-process-memory was removed; use --memory-guard {safe,balanced,aggressive}
-# (or --memory-guard-gb N for a hard ceiling). "aggressive" preserves the old 90% intent.
-OMLX_EXTRA_ARGS ?= --memory-guard aggressive --memory-guard-gb 27 --hot-cache-max-size 4GB --max-concurrent-requests 2 --initial-cache-blocks 1024
-# Restart/stop robustness knobs. omlx unloads a large model on shutdown, so the socket
-# can take several seconds to free — stop waits before start rebinds; start/restart poll
-# /v1/models until healthy.
-OMLX_LOAD_TIMEOUT ?= 900
-OMLX_STOP_TIMEOUT ?= 30
-OMLX_STARTUP_POLL_INTERVAL ?= 5
-# Homebrew LaunchAgent label. When this service is loaded it (not the nohup path) owns
-# :OMLX_PORT, so scripts/omlx.sh delegates to `brew services` instead of fighting KeepAlive.
-OMLX_BREW_LABEL ?= homebrew.mxcl.omlx
-# Env passed to scripts/omlx.sh, which owns all omlx lifecycle logic (brew-aware).
-OMLX_ENV = OMLX_HOST="$(OMLX_HOST)" OMLX_PORT="$(OMLX_PORT)" OMLX_MODEL_DIR="$(OMLX_MODEL_DIR)" \
-	OMLX_PID="$(OMLX_PID)" OMLX_LOG="$(OMLX_LOG)" OMLX_EXTRA_ARGS="$(OMLX_EXTRA_ARGS)" \
-	OMLX_LOAD_TIMEOUT="$(OMLX_LOAD_TIMEOUT)" OMLX_STOP_TIMEOUT="$(OMLX_STOP_TIMEOUT)" \
-	OMLX_STARTUP_POLL_INTERVAL="$(OMLX_STARTUP_POLL_INTERVAL)" OMLX_BREW_LABEL="$(OMLX_BREW_LABEL)"
-
-omlx-install:
-	@echo "Checking omlx installation..."
-	@if ! command -v omlx >/dev/null 2>&1; then \
-		echo "omlx not found on PATH."; \
-		echo "Install via Homebrew:"; \
-		echo "  brew tap jundot/omlx https://github.com/jundot/omlx"; \
-		echo "  brew install omlx"; \
-		echo "  brew services start omlx"; \
-		echo ""; \
-		echo "Or from source (requires Python 3.10+, macOS 15+):"; \
-		echo "  git clone https://github.com/jundot/omlx.git && cd omlx"; \
-		echo "  pip install -e ."; \
-		exit 1; \
-	fi
-	@echo "omlx $(shell omlx --version 2>/dev/null || echo 'installed') found on PATH"
-
-omlx-start:
-	@$(OMLX_ENV) bash scripts/omlx.sh start
-
-omlx-stop:
-	@$(OMLX_ENV) bash scripts/omlx.sh stop
-
-omlx-restart:
-	@$(OMLX_ENV) bash scripts/omlx.sh restart
-
-omlx-status:
-	@$(OMLX_ENV) bash scripts/omlx.sh status
-
-omlx-logs:
-	@$(OMLX_ENV) bash scripts/omlx.sh logs
-
-# vllm-mlx OpenAI-compatible server (alternative to omlx; shares port 8000 — stop one before starting the other)
-# Follows the per-machine MODEL_REPO default; override independently if needed.
-VLLM_MODEL_REPO ?= $(MODEL_REPO)
-VLLM_MODEL_SLUG ?= $(subst /,__,$(VLLM_MODEL_REPO))
-VLLM_MODEL_DIR  ?= models/$(VLLM_MODEL_SLUG)
-VLLM_HOST       ?= 0.0.0.0
-VLLM_PORT       ?= 8000
-VLLM_PID        ?= vllm-server.pid
-VLLM_LOG        ?= vllm-server.log
-VLLM_EXTRA_ARGS ?= --gpu-memory-utilization 0.90 --cache-memory-mb 4096 \
-                   --max-num-seqs 2 --use-paged-cache --max-cache-blocks 1024
-
-vllm-install:
-	@if ! command -v vllm-mlx >/dev/null 2>&1; then \
-		echo "vllm-mlx not found. Install with:"; \
-		echo "  uv tool install vllm-mlx"; \
-		exit 1; \
-	fi
-	@vllm-mlx --version 2>/dev/null || echo "vllm-mlx installed"
-
-vllm-start:
-	@bash scripts/detect_machine.sh
-	@if [ -f "$(VLLM_PID)" ] && kill -0 "$$(cat "$(VLLM_PID)")" 2>/dev/null; then \
-		echo "vllm-mlx already running with PID $$(cat "$(VLLM_PID)")"; exit 0; \
-	fi
-	@if lsof -nP -iTCP:$(VLLM_PORT) -sTCP:LISTEN >/dev/null 2>&1; then \
-		echo "Port $(VLLM_PORT) is already in use (omlx running?):"; \
-		lsof -nP -iTCP:$(VLLM_PORT) -sTCP:LISTEN; \
-		exit 1; \
-	fi
-	@if [ ! -d "$(VLLM_MODEL_DIR)" ]; then \
-		echo "Model directory not found: $(VLLM_MODEL_DIR)"; \
-		echo "Run: make model-download MODEL_REPO=$(VLLM_MODEL_REPO)"; \
-		exit 1; \
-	fi
-	@nohup vllm-mlx serve "$(VLLM_MODEL_DIR)" \
-		--served-model-name "$(VLLM_MODEL_SLUG)" \
-		--host "$(VLLM_HOST)" --port "$(VLLM_PORT)" \
-		$(VLLM_EXTRA_ARGS) >"$(VLLM_LOG)" 2>&1 & \
-	pid=$$!; echo "$$pid" > "$(VLLM_PID)"; \
-	echo "Started vllm-mlx PID $$pid on $(VLLM_HOST):$(VLLM_PORT) ($(VLLM_MODEL_SLUG))"
-
-vllm-stop:
-	@if [ ! -f "$(VLLM_PID)" ]; then echo "No vllm-mlx PID file"; exit 0; fi
-	@pid=$$(cat "$(VLLM_PID)"); \
-	if kill -0 "$$pid" 2>/dev/null; then kill "$$pid"; echo "Stopped vllm-mlx PID $$pid"; \
-	else echo "PID $$pid not running"; fi; \
-	rm -f "$(VLLM_PID)"
-
-vllm-restart: vllm-stop vllm-start
-
-vllm-status:
-	@if [ -f "$(VLLM_PID)" ]; then echo "PID: $$(cat "$(VLLM_PID)")"; else echo "PID: not running"; fi
-	@echo "Model:    $(VLLM_MODEL_SLUG)"
-	@echo "Endpoint: http://127.0.0.1:$(VLLM_PORT)/v1"
-	@lsof -nP -iTCP:$(VLLM_PORT) -sTCP:LISTEN || true
-
-vllm-logs:
-	@tail -n 200 "$(VLLM_LOG)"
-
-vllm-bench:
-	@bash scripts/detect_machine.sh
-	$(UV) run mlx-bench "$(VLLM_MODEL_SLUG)" \
-		--omlx-url http://127.0.0.1:$(VLLM_PORT) \
-		--no-unload
-
-# stable-diffusion.cpp server — FLUX.2 Klein 4B distilled (text-to-image, OpenAI /v1/images/generations)
-# Requires three model files: diffusion model + VAE + Qwen3-4B LLM text encoder.
-# Uses port 7860 to coexist with omlx on 8000.
-SD_BIN_DIR    ?= bin
-SD_SERVER     ?= $(SD_BIN_DIR)/sd-server
-SD_MODEL_DIR  ?= models-sd
-SD_DIFF_MODEL ?= $(SD_MODEL_DIR)/flux-2-klein-4b-Q4_0.gguf
-SD_VAE        ?= $(SD_MODEL_DIR)/flux2-vae.safetensors
-SD_LLM        ?= $(SD_MODEL_DIR)/Qwen3-4B-Q4_K_M.gguf
-SD_HOST       ?= 0.0.0.0
-SD_PORT       ?= 7860
-SD_PID        ?= sd-server.pid
-SD_LOG        ?= sd-server.log
-# --diffusion-fa: flash attention for diffusion; --cfg-scale 1.0 + --steps 4: distilled model settings
-SD_EXTRA_ARGS ?= --diffusion-fa --cfg-scale 1.0 --steps 4
-
-sd-install:
-	@echo "Downloading stable-diffusion.cpp binary (macOS ARM64)..."
-	@mkdir -p "$(SD_BIN_DIR)"
-	@ASSET_URL=$$(curl -s https://api.github.com/repos/leejet/stable-diffusion.cpp/releases/latest \
-		| python3 -c "import sys,json; assets=json.load(sys.stdin)['assets']; \
-		  url=[a['browser_download_url'] for a in assets if 'Darwin' in a['name'] and 'arm64' in a['name']]; \
-		  print(url[0] if url else '')"); \
-	if [ -z "$$ASSET_URL" ]; then echo "Could not find macOS ARM64 binary in latest release"; exit 1; fi; \
-	echo "Downloading $$ASSET_URL ..."; \
-	curl -L -o /tmp/sd-cpp-macos.zip "$$ASSET_URL"; \
-	unzip -o /tmp/sd-cpp-macos.zip -d "$(SD_BIN_DIR)"; \
-	chmod +x "$(SD_BIN_DIR)/sd-server" "$(SD_BIN_DIR)/sd-cli" 2>/dev/null || true; \
-	rm -f /tmp/sd-cpp-macos.zip; \
-	echo "Installed: $$(ls $(SD_BIN_DIR)/)"
-
-sd-model-download: server-install
-	@echo "Downloading FLUX.2 Klein 4B model files into $(SD_MODEL_DIR)/ ..."
-	@mkdir -p "$(SD_MODEL_DIR)"
-	@HF_TOKEN="$(HF_TOKEN)" $(PYTHON) -c '\
-import os; from huggingface_hub import hf_hub_download; token = os.environ.get("HF_TOKEN") or None; \
-target = "$(SD_MODEL_DIR)"; \
-print("1/3 diffusion model: leejet/FLUX.2-klein-4B-GGUF / flux-2-klein-4b-Q4_0.gguf"); \
-hf_hub_download(repo_id="leejet/FLUX.2-klein-4B-GGUF", filename="flux-2-klein-4b-Q4_0.gguf", local_dir=target, token=token); \
-print("2/3 VAE: Comfy-Org/flux2-klein-4B / split_files/vae/flux2-vae.safetensors"); \
-hf_hub_download(repo_id="Comfy-Org/flux2-klein-4B", filename="split_files/vae/flux2-vae.safetensors", local_dir=target, local_dir_use_symlinks=False, token=token); \
-import shutil; shutil.move(target+"/split_files/vae/flux2-vae.safetensors", target+"/flux2-vae.safetensors") if not __import__("os").path.exists(target+"/flux2-vae.safetensors") else None; \
-print("3/3 LLM text encoder: unsloth/Qwen3-4B-GGUF / Qwen3-4B-Q4_K_M.gguf"); \
-hf_hub_download(repo_id="unsloth/Qwen3-4B-GGUF", filename="Qwen3-4B-Q4_K_M.gguf", local_dir=target, token=token); \
-print("All model files ready in $(SD_MODEL_DIR)/")'
-
-sd-start:
-	@if [ ! -f "$(SD_SERVER)" ]; then \
-		echo "sd-server not found. Run: make sd-install"; exit 1; \
-	fi
-	@if [ ! -f "$(SD_DIFF_MODEL)" ] || [ ! -f "$(SD_VAE)" ] || [ ! -f "$(SD_LLM)" ]; then \
-		echo "Model files missing. Run: make sd-model-download"; exit 1; \
-	fi
-	@if [ -f "$(SD_PID)" ] && kill -0 "$$(cat "$(SD_PID)")" 2>/dev/null; then \
-		echo "sd-server already running with PID $$(cat "$(SD_PID)")"; exit 0; \
-	fi
-	@if lsof -nP -iTCP:$(SD_PORT) -sTCP:LISTEN >/dev/null 2>&1; then \
-		echo "Port $(SD_PORT) already in use:"; lsof -nP -iTCP:$(SD_PORT) -sTCP:LISTEN; exit 1; \
-	fi
-	@nohup "$(SD_SERVER)" \
-		--diffusion-model "$(SD_DIFF_MODEL)" \
-		--vae "$(SD_VAE)" \
-		--llm "$(SD_LLM)" \
-		--listen-ip "$(SD_HOST)" --listen-port "$(SD_PORT)" \
-		$(SD_EXTRA_ARGS) >"$(SD_LOG)" 2>&1 & \
-	pid=$$!; echo "$$pid" > "$(SD_PID)"; \
-	echo "Started sd-server PID $$pid on $(SD_HOST):$(SD_PORT) (FLUX.2 Klein 4B)"
-
-sd-stop:
-	@if [ ! -f "$(SD_PID)" ]; then echo "No sd-server PID file"; exit 0; fi
-	@pid=$$(cat "$(SD_PID)"); \
-	if kill -0 "$$pid" 2>/dev/null; then kill "$$pid"; echo "Stopped sd-server PID $$pid"; \
-	else echo "PID $$pid not running"; fi; \
-	rm -f "$(SD_PID)"
-
-sd-status:
-	@if [ -f "$(SD_PID)" ]; then echo "PID: $$(cat "$(SD_PID)")"; else echo "PID: not running"; fi
-	@echo "Endpoint: http://127.0.0.1:$(SD_PORT)/v1/images/generations"
-	@echo "Models:"
-	@echo "  diffusion: $(SD_DIFF_MODEL)"
-	@echo "  vae:       $(SD_VAE)"
-	@echo "  llm:       $(SD_LLM)"
-	@lsof -nP -iTCP:$(SD_PORT) -sTCP:LISTEN || true
-
-sd-logs:
-	@tail -n 200 "$(SD_LOG)"
-
