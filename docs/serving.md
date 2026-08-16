@@ -65,6 +65,113 @@ Homebrew build** — 0.4.4 lacked them, 0.5.4rc1 has them. If those endpoints 50
 with `No module named 'mlx_audio.tts.models'`, do **not** `pip install`; you are
 running a stale server.
 
+### Letting clients choose behaviour
+
+omlx offers two ways to expose a capability and let the caller decide whether to
+use it. They differ in what the client has to know.
+
+**1. Request parameters** — for clients you control. `ChatCompletionRequest`
+accepts `thinking_budget`, `chat_template_kwargs`, `guided_grammar`,
+`structured_outputs`, `specprefill*` and the full sampling set. Per-model server
+settings act as defaults that these override.
+
+**2. Exposed profiles** — for clients that only know how to pick a model name
+(Codex CLI, Qwen Code, IDE plugins). A named profile marked `expose_as_model`
+is advertised in `/v1/models` as its own ID, `{base_model}:{api_name}`.
+
+Profiles live in `~/.omlx/model_profiles.json`, read at startup. The admin API
+(`POST /admin/api/models/{id}/profiles`) requires admin auth; writing the file
+directly and restarting does not.
+
+```json
+{
+  "version": 1,
+  "profiles": {
+    "mlx-community__Qwen3.6-35B-A3B-nvfp4": {
+      "fast": {
+        "name": "fast",
+        "display_name": "Fast (no thinking)",
+        "api_name": "fast",
+        "description": "Thinking disabled for latency-sensitive callers.",
+        "settings": { "enable_thinking": false },
+        "expose_as_model": true
+      }
+    }
+  }
+}
+```
+
+After `make omlx-restart`, `mlx-community__Qwen3.6-35B-A3B-nvfp4:fast` is
+selectable like any other model. Measured on the M2 Pro, same prompt
+("What is 17*23? Reply with just the number."):
+
+| model ID | generated | `content` | `reasoning_content` | wall |
+|---|---:|---|---|---:|
+| `…-nvfp4` | 256 tok | `391` | 664 chars | 4.87 s |
+| `…-nvfp4:fast` | 3 tok | `391` | — | **0.41 s** |
+
+Same answer, 12× faster. The profile reuses the base model's loaded engine — a
+cold 19 GB load would take 15–20 s, so 0.41 s confirms no reload.
+
+**Which fields cost a reload.** `omlx/model_profiles.py` splits settings in two:
+
+- `UNIVERSAL_PROFILE_FIELDS` (19) — applied as a request-time overlay, **no
+  reload**: `temperature`, `top_p`/`top_k`/`min_p`, the penalties,
+  `enable_thinking`, `preserve_thinking`, `thinking_budget_*`,
+  `reasoning_parser`, `guided_grammar*`, `chat_template_kwargs`,
+  `forced_ct_kwargs`, `max_context_window`, `max_tokens`, `force_sampling`,
+  `max_tool_result_tokens`.
+- `MODEL_SPECIFIC_PROFILE_FIELDS` (28) — engine-construction fields that trigger
+  a **transient engine variant reload**: `turboquant_kv_*`, `mtp_*`,
+  `vlm_mtp_*`, `dflash_*`, `specprefill_*`, `index_cache_freq`.
+
+So thinking toggles are free to switch; TurboQuant KV and MTP are not.
+
+**Locking a setting against clients.** `forced_ct_kwargs` is a per-model list of
+`chat_template_kwargs` keys the client **cannot** override. The precedence chain
+(`model_settings.py::merge_chat_template_kwargs`), lowest to highest:
+
+1. `settings.chat_template_kwargs`
+2. the dedicated `enable_thinking` / `preserve_thinking` toggles
+3. per-request `chat_template_kwargs` — *except* keys in `forced_ct_kwargs`
+4. thinking-budget activation, when `enable_thinking` is still unset
+5. the model's preserve-thinking default
+
+That makes each key individually either a default (client may override) or a
+lock (client may not).
+
+### Thinking control
+
+The deployed Qwen3.6 MoE is a reasoning model. Thinking is **on by default** and
+the trace is returned in a separate `reasoning_content` field, not in `content`.
+
+| request | generated | `content` | `reasoning_content` |
+|---|---:|---|---|
+| default | 300 tok | `391` | present |
+| `chat_template_kwargs: {"enable_thinking": false}` | 3 tok | `391` | absent |
+| `thinking_budget: 0` | 5 tok | `391` | absent |
+| `thinking_budget: 128` | 132 tok | `391` | present |
+
+> ⚠️ **Do not use a small `thinking_budget`, and do not judge a reasoning model
+> by a low `max_tokens`.** Truncating mid-thought leaves the `<think>` block
+> unclosed, so the parser cannot split it and the partial reasoning **spills
+> into `content`**. Measured: `thinking_budget: 32` returned
+> `'- Constraint: "Reply with just the number."'` as the answer — and generated
+> *more* tokens (275) than `thinking_budget: 128` (132), having fallen into a
+> repetition loop. 128 and up behave correctly. To switch thinking off, use
+> `enable_thinking: false`, never a tiny budget.
+
+**New models rarely need configuration for this.** `<think>` stripping is done
+by `omlx/adapter/output_parser.py`, which detects the protocol per model family
+(Harmony sessions, DeepSeek V4, Cohere2 MoE, MiniMax's `<mm:think>` normalized
+to `<think>`, …). Tool-call parsers are auto-detected too — the log line
+`VLM tool calling enabled: parser=qwen3_coder` comes from a model whose settings
+are `{}`. The `reasoning_parser` setting is **not** the think-stripper: it is
+only used to build xgrammar structural tags (`server.py::_patch_output_format`),
+i.e. when structured output and reasoning are combined. Per-model config is
+needed only for non-default behaviour, engine-level features, or that
+structured-output-plus-reasoning case.
+
 ### Memory tuning
 
 - **System**: `make optimize-system` raises `iogpu.wired_limit_mb` to 30720.
