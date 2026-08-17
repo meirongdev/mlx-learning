@@ -32,6 +32,26 @@ A larger MoE is both stronger and ~4.3× faster than a dense model half its size
 because MoE collapses per-token memory traffic. Anything under ~16 GB of *active*
 weights is the ceiling for this class of machine.
 
+⚠️ **That 10.6 is not comparable to today's checkpoint.** It predates the 2026
+Qwen3.6 hybrid-attention VLM build and almost certainly measured a
+standard-attention 27B. Re-measured on **M5, omlx 0.4.4, 2026-06-30** against
+`mlx-community/Qwen3.6-27B-4bit` as it ships now (dense, 64 layers, 3:1
+Gated-DeltaNet/SSM linear-attention to full attention):
+
+| Model on M5                      | Active/token | tok/s (512) | Bandwidth ceiling | % of ceiling |
+|----------------------------------|-------------:|------------:|------------------:|-------------:|
+| Qwen3.6-27B-4bit (dense, hybrid) | ~13.5 GB     | **~4.4**    | ~11.4 tok/s       | ~39%         |
+| Qwen3.6-35B-A3B-nvfp4 (MoE)      | ~1.5 GB      | ~40–49      | —                 | —            |
+
+So the dense 27B is ~10× slower than the MoE *on the same machine*, and it is not
+swap-bound — 0.31 GB of page-ins across a full 121 s decode, so the 15 GB model
+stays resident under the 26 GB wired limit. It reaches only ~39% of its bandwidth
+ceiling because the linear-attention layers hit an unoptimized sequential MLX
+path, on top of the dense footprint. The M2 Pro has not been re-measured on this
+exact checkpoint, so the cross-machine gap for it is unknown. The model was
+deleted from M5 after the run. Report:
+`benchmarks/m5-qwen3.6-27b-dense-4bit-20260630.md`.
+
 ## Quantization is machine-dependent
 
 Published MLX guidance (early 2026): DWQ-4bit > standard 4bit > NVFP4 / MXFP4.

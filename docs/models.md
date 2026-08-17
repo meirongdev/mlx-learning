@@ -177,6 +177,21 @@ not taken:
 
 ## Model-selection findings
 
+### `nvidia/Qwen3.6-27B-NVFP4` cannot run on Apple Silicon
+
+Same FP4 name (E2M1), different on-disk format. That repo is an **NVIDIA
+ModelOpt** checkpoint (tensor types BF16 / F8_E4M3 / U8) built for vLLM /
+TensorRT-LLM on Hopper/Blackwell CUDA; its packing and scale tensors are not the
+MLX-native NVFP4 that `mlx-community` ships. No MLX runtime deserializes it —
+omlx, mlx-lm, and vllm-mlx alike (vllm-mlx is MLX-backed, *not* CUDA vLLM).
+
+There is **no MLX-native NVFP4 build of any Qwen3.6-27B on HF**; the only MLX
+dense 27B options are `mlx-community/Qwen3.6-27B-4bit` and `…-OptiQ-4bit`. Since
+a dense model is bandwidth-bound on its full active weights regardless of
+FP4-vs-int4 packing, the std 4-bit build is the faithful stand-in — and it
+benchmarked at ~4.4 tok/s on M5, so the question is moot either way. See
+[performance.md](./performance.md).
+
 ### DiffusionGemma is NOT a newer Gemma 4
 
 It is a separate model built *on* the Gemma 4 26B-A4B architecture

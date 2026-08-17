@@ -92,6 +92,20 @@ vllm-mlx is **5–10% faster** on text LLMs and stays ahead but converges as war
 
 **M2 Pro:** done — see `m2pro-omlx-vs-vllm-mlx-20260503.md`. The gap was *larger*, not smaller (+28% for vllm-mlx on std 4bit / NVFP4), but it closed entirely once omlx reached 0.5.4rc1 (57.9 vs 58.8 tok/s). See [`../performance.md`](../performance.md).
 
+### Dense 27B on M5 — the MoE thesis, re-checked (2026-06-30, omlx 0.4.4)
+
+`mlx-community/Qwen3.6-27B-4bit` (dense, hybrid Gated-DeltaNet/SSM + full
+attention, 64 layers) on M5: **~4.4 tok/s**, stable across 512 and 1024, against
+~40–49 for the 35B-A3B MoE on the same box — ~10× slower. Not swap-bound (0.31 GB
+page-ins over a 121 s decode) and not cache-tuning-sensitive (a lean omlx cache
+config changed nothing). It reaches ~39% of its ~11.4 tok/s bandwidth ceiling
+because the linear-attention layers hit an unoptimized sequential MLX path.
+
+The intended target, `nvidia/Qwen3.6-27B-NVFP4`, turned out to be an NVIDIA
+ModelOpt/CUDA checkpoint no MLX runtime can load — see
+[`../models.md`](../models.md). Model deleted from M5 after the run. Report:
+`m5-qwen3.6-27b-dense-4bit-20260630.md`.
+
 ### Speculative decoding (MTP) on a dense model — Qwen3.8-27B mxfp4
 
 Same model, drafter, omlx 0.5.7 and prompts on both machines. Acceptance is
