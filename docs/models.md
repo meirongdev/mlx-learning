@@ -20,7 +20,9 @@ every subdirectory at startup — drop a model in and `make omlx-restart`
 
 ## Catalog
 
-The **On disk** column reflects state after the 2026-06-28 M5 cleanup.
+The **On disk** column reflects state after the 2026-06-28 M5 cleanup, plus the
+2026-08-17 M5 additions (`Qwen3.8-27B-mxfp4` + its drafter, and the Gemma 4 MTP
+assistant — ~15.5 GB, kept after the MTP round; delete if you want the space back).
 
 | Model dir                                           | Quantization | Size   | Context | On disk | Notes |
 |-----------------------------------------------------|--------------|--------|---------|---------|-------|
@@ -35,7 +37,7 @@ The **On disk** column reflects state after the 2026-06-28 M5 cleanup.
 | `mlx-community__Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit` | 8bit       | ~2.9 GB | —      | M2 Pro  | **TTS** (`/v1/audio/speech`). See the voice list below — there is no `default` |
 | `mlx-community__Qwen3-Reranker-0.6B-4bit`           | 4bit         | ~0.4 GB | —      | M2 Pro  | **Reranker** (`/v1/rerank`). Added 2026-08-01. Required for that endpoint — an embedding model will not do |
 | `z-lab__Qwen3.6-35B-A3B-DFlash`                     | bf16         | ~0.77 GB | —     | M2 Pro (unused) | DFlash speculative drafter. **Benchmarked and rejected — cost 19–29%.** Kept for reference only; safe to delete |
-| `mlx-community__gemma-4-26B-A4B-it-qat-assistant-nvfp4` | QAT NVFP4 | ~0.26 GB | —    | M2 Pro (unused) | Google's official Gemma 4 MTP drafter (`gemma4_assistant`). **Benchmarked and rejected — cost 12%.** Safe to delete |
+| `mlx-community__gemma-4-26B-A4B-it-qat-assistant-nvfp4` | QAT NVFP4 | ~0.26 GB | —    | M2 Pro (unused), **M5 (on disk, MTP off)** | Google's official Gemma 4 MTP drafter (`gemma4_assistant`, `block_size=4`). **Rejected on M2 Pro (−12%) but re-tested on M5 2026-08-17: −0.6% general, +21.5% code at 78% acceptance.** Keep on M5 if the workload is code-heavy — enabling it is a one-key change, see serving.md; delete on M2 Pro |
 | `mlx-community__diffusiongemma-26B-A4B-it-4bit`     | std 4bit     | ~15 GB | 256k    | M2 Pro (unused) | **Separate model, not a Gemma 4 version** (see below). **Benchmarked and rejected — 14.3 vs 44.3 tok/s.** Still listed in `/v1/models`, so a client can pick it and get 3× slower replies. Safe to delete |
 
 ### Qwen3.8-27B (dense) — evaluated as a second model, not deployed
@@ -46,35 +48,45 @@ speed: the whole family runs 4–5× slower than the deployed MoE. It is a VLM
 (`Qwen3_5ForConditionalGeneration` + `vision_config`), so omlx loads it through
 `VLMBatchedEngine` — which is why the MTP fast-verify kernel never arms for it.
 
-**Nothing from this family is on disk.** All seven checkpoints were downloaded,
-benchmarked, and removed 2026-08-16 (~45.5 GB reclaimed) — the M2 Pro keeps only
-`Qwen3.6-35B-A3B-nvfp4` for inference, which is 4–5× faster and, unlike what the
-name suggests, **also serves vision** (`Qwen3_5MoeForConditionalGeneration` with
-a `vision_config`; verified end-to-end). The rows below are kept so the options
-are not silently retried.
+**Two checkpoints are back on disk — on the M5.** All seven were downloaded,
+benchmarked and removed on the M2 Pro 2026-08-16 (~45.5 GB reclaimed); `mxfp4`
+plus its `MTP-mxfp4` drafter were then re-downloaded to the **M5** on 2026-08-17
+to test the family on the other machine. That round changed the verdict for M5 —
+see the MTP note below. The M2 Pro still keeps only `Qwen3.6-35B-A3B-nvfp4` for
+inference, which is 4–5× faster and, unlike what the name suggests, **also serves
+vision** (`Qwen3_5MoeForConditionalGeneration` with a `vision_config`; verified
+end-to-end). The rows below are kept so the options are not silently retried.
 
 | Model dir | Quantization | Size | On disk | Notes |
 |---|---|---|---|---|
-| `mlx-community__Qwen3.8-27B-mxfp4` | mxfp4, gs 32 | ~14 GB | — | Deleted last, after being kept briefly as a standby. Best bare in every cell (11.48–11.83); if the family is ever revisited, start here with MTP off |
+| `mlx-community__Qwen3.8-27B-mxfp4` | mxfp4, gs 32 | ~14 GB | **M5** | Best bare in every cell on both machines (M2 Pro 11.48–11.83, M5 8.45–8.50). **On M5, pair it with the drafter below — +41–98%.** On M2 Pro, run it bare |
+| `mlx-community__Qwen3.8-27B-MTP-mxfp4` | mxfp4, gs 32 | ~241 MB | **M5** | Re-downloaded 2026-08-17. Only +11% on general / net loss on code *on M2 Pro*, but **wins every cell on M5** — the drafter is identical, the verify hardware is not |
 | `mlx-community__Qwen3.8-27B-nvfp4` | nvfp4, gs 16 | ~15 GB | — | Deleted. Higher peak (14.29) but only *with* a drafter and only on redundant general text; bare it loses to mxfp4 everywhere |
 | `mlx-community__Qwen3.8-27B-4bit` | affine, gs 64 | ~15 GB | — | Deleted. Superseded by mxfp4 bare (11.45 vs 11.75); worst under MTP (−22%) |
-| `mlx-community__Qwen3.8-27B-MTP-nvfp4` | nvfp4, gs 16 | ~253 MB | — | Deleted with its base model. Was the only drafter worth pairing |
-| `mlx-community__Qwen3.8-27B-MTP-mxfp4` | mxfp4, gs 32 | ~241 MB | — | Deleted. Only +11% on general, net loss on code |
+| `mlx-community__Qwen3.8-27B-MTP-nvfp4` | nvfp4, gs 16 | ~253 MB | — | Deleted with its base model. Was the only drafter worth pairing *on M2 Pro* |
 | `mlx-community__Qwen3.8-27B-MTP-bf16` | none | ~829 MB | — | Deleted. 3.4× the size buys no acceptance |
 | `mlx-community__Qwen3.8-27B-MTP-4bit` | affine, gs 64 | ~253 MB | — | Deleted. Costs 22% |
 
-**If the family is ever revisited, start from `mxfp4`, not the faster-peaking
-`nvfp4` pair.** Peak throughput needs the drafter, i.e. two checkpoints plus a
-settings change, and `vlm_mtp_enabled` conflicts with TurboQuant KV, which the
-default model uses. On bare speed — the thing that matters without a drafter —
-`nvfp4` (10.96–11.16) loses to `mxfp4` (11.48–11.83) in every cell. The MTP peak
-also lands on the workload this model is *least* wanted for: it is a net loss on
-code.
+**Start from `mxfp4`, not the faster-peaking `nvfp4` pair** — it is the best bare
+quantization in every cell on both machines, and on M5 the MTP objection below
+does not apply.
+
+*On M2 Pro*, peak throughput needs the drafter, i.e. two checkpoints plus a
+settings change, and the MTP peak lands on the workload this model is *least*
+wanted for: it is a net loss on code. **On M5 that reverses** — the `mxfp4` +
+`MTP-mxfp4` pair wins every cell by 41–98%, code included, so both checkpoints
+are worth their disk. The documented `vlm_mtp_enabled` / TurboQuant KV conflict
+does not bite on the M5 at all — **neither** model there enables TurboQuant
+(`turboquant_kv_bits=None` at load for both this one and Gemma 4).
+See [performance.md](./performance.md) and
+[benchmarks/m5-qwen38-27b-mxfp4-mtp-20260817.md](./benchmarks/m5-qwen38-27b-mxfp4-mtp-20260817.md).
 
 Restore any of these with `make model-download MODEL_REPO=...`.
 Drafters are auto-detected as helpers (`HELPER_CONFIG_MODEL_TYPE_SUFFIXES =
 ("_assistant", "_mtp")`) and stay hidden from `/v1/models` given
-`hide_helper_models: true`.
+`hide_helper_models: true` — **note the M5 does not set that flag**, so
+`Qwen3.8-27B-MTP-mxfp4` is currently listed there and a client could select the
+drafter as if it were a chat model.
 
 Never downloaded — excluded by the 32 GB wired limit: `-8bit` (29.53 GB),
 `-mxfp8` (28.69 GB), `-bf16` (54.74 GB). Untested: `-OptiQ-4bit`, but see the

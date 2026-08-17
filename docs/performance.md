@@ -60,9 +60,11 @@ the same ~19 GB, so the 200 GB/s bus is the ceiling regardless of format.
 So: **M5 → NVFP4. M2 Pro → any of the three.** (M5 no longer keeps a Qwen as of
 2026-06-28; if you reintroduce one, prefer `mlx-community/Qwen3.6-35B-A3B-nvfp4`.)
 
-## Speculative and parallel decoding lose on these MoE models
+## Speculative and parallel decoding lose on these MoE models — on the M2 Pro
 
 Measured three ways on the M2 Pro, 2026-08-01. **Do not retry these blind.**
+The Gemma MTP row was re-measured on the M5 on 2026-08-17 and **does not
+reproduce there** — see [below](#and-on-m5-the-moe-verdict-flips-for-code).
 
 | Method | Model | Warm tok/s, 512 tok | vs baseline |
 |---|---|------:|---|
@@ -82,6 +84,13 @@ models fast on a bandwidth-bound Mac is exactly what makes parallel decoding
 expensive. "Speculation beats the bandwidth limit" is a **dense-model** rule and
 inverts here.
 
+The Gemma row is the strongest evidence for that reading — it used Google's own
+purpose-built drafter (`google/gemma-4-26B-A4B-it-assistant`, 246k downloads,
+`model_type: gemma4_assistant`, 0.27 GB, first-class omlx support), so "the
+drafter wasn't matched to the model" is not an available explanation for the
+M2 Pro loss. What the M5 round later showed is that the penalty, while real, is
+not by itself disqualifying — see below.
+
 ### …but on dense models it only half-holds
 
 That closing claim was tested on an actual dense model (Qwen3.8-27B, 2026-08-16,
@@ -95,6 +104,9 @@ delivers only 1.69–1.88, making it a **net loss (−5 to −10%) on code**.
 **Revised rule: on dense models speculation can pay, but only above ~2.0
 accepted tokens/round — measure acceptance from omlx's `vlm_mtp stats` log line
 before trusting it.** On MoE it remains a flat no.
+
+That ~2.0 threshold is **an M2 Pro number, not a constant** — see the next
+section, which measures it at ~1.26 on the M5.
 
 Two follow-up levers were measured and both are dead ends:
 
@@ -113,10 +125,80 @@ Two follow-up levers were measured and both are dead ends:
 Full data: [`benchmarks/m2pro-qwen38-27b-mtp-20260816.md`](./benchmarks/m2pro-qwen38-27b-mtp-20260816.md)
 and [`benchmarks/m2pro-qwen38-27b-mxfp4-mtp-20260816.md`](./benchmarks/m2pro-qwen38-27b-mxfp4-mtp-20260816.md).
 
-The Gemma row is the strongest evidence — it used Google's own purpose-built
-drafter (`google/gemma-4-26B-A4B-it-assistant`, 246k downloads,
-`model_type: gemma4_assistant`, 0.27 GB, first-class omlx support), so "the
-drafter wasn't matched to the model" is not an available explanation.
+### …and the break-even threshold is per-machine — on M5 speculation just wins
+
+The M2 Pro round was replicated on the M5 on 2026-08-17 with the same model,
+drafter, omlx version and prompts. **MTP won every cell, including code:**
+
+| cell | M5 bare | M5 + MTP | Δ | M2 Pro Δ (same config) |
+|---|---:|---:|---:|---:|
+| general 512 | 8.50 | 15.01 | **+77%** | −1% |
+| general 1024 | 8.45 | 16.75 | **+98%** | +11% |
+| code 512 | 8.49 | 12.09 | **+42%** | −2% |
+| code 1024 | 8.50 | 11.98 | **+41%** | −4% |
+
+Acceptance was statistically identical on both machines (2.41 tokens/round on
+general/1024 either way) — draft quality is a model property, so the entire
+difference is **verify cost**. Backing it out of `speedup = tokens_per_round / c`:
+
+| Machine | Cost of one M=4 verify, in decode steps | Break-even tokens/round |
+|---|---:|---:|
+| M2 Pro | ~2.04 | **~2.04** |
+| M5 | ~1.26 | **~1.26** |
+
+**So: on M5, enable MTP on dense models — there was no losing workload in the
+tested set. On M2 Pro, check acceptance first.** This is the same neural-accelerator
+story as the NVFP4 anomaly above: a batched M=4 verify is compute-dense and
+bandwidth-light, exactly the shape M5 is good at, while single-token decode is
+pure bandwidth, where M5 loses.
+
+Consequence worth internalizing: **MTP inverts the machine ranking.** Bare, M2 Pro
+beats M5 by 39%; with MTP, M5 beats M2 Pro in every cell (16.75 vs 13.14 at best).
+"The older M2 Pro is faster" is a plain-decode statement only.
+
+Full data: [`benchmarks/m5-qwen38-27b-mxfp4-mtp-20260817.md`](./benchmarks/m5-qwen38-27b-mxfp4-mtp-20260817.md).
+
+### …and on M5 the MoE verdict flips, for code
+
+Gemma 4 + Google's own assistant, measured on M5 2026-08-17 (the machine that
+actually deploys it — the −12% above was an M2 Pro run):
+
+| cell | bare | + MTP | Δ | tokens/round |
+|---|---:|---:|---:|---:|
+| general 512 | 38.59 | 38.25 | −0.9% | 2.57 |
+| general 1024 | 38.67 | 38.56 | −0.3% | 2.63 |
+| code 512 | 39.05 | **47.44** | **+21.5%** | 3.36 |
+| code 1024 | 38.87 | **47.23** | **+21.5%** | 3.34 |
+
+Break-even is **~2.70** tokens/round here. General text sits exactly on it and is a
+coin flip run-to-run (best run +7.7% at 2.88, worst −8.1% at 2.37, same implied
+verify cost); code clears it at 78% acceptance and wins solidly.
+
+**The union-of-experts penalty is confirmed and now has a number.** Comparing the
+two models measured on M5 the same day, each *extra* verified position costs
+
+| Model | M | `c` | cost per extra position |
+|---|---:|---:|---:|
+| Qwen3.8-27B mxfp4 (dense) | 4 | 1.26 | **0.087** |
+| gemma-4-26B-A4B (MoE) | 5 | 2.70 | **0.425** |
+
+— **~4.9× more on the MoE.** So the structural argument above was right; what it
+got wrong was treating the penalty as disqualifying. A drafter good enough to
+clear the higher bar still wins, and Google's clears it on code.
+
+Note the workload inversion versus the dense model: Qwen's MTP head drafts code at
+44% acceptance and general at 70%, Google's assistant is 78% on code and 54% on
+general. **Which workload benefits is a property of the drafter, not of
+speculation.**
+
+Full data: [`benchmarks/m5-gemma4-mtp-20260817.md`](./benchmarks/m5-gemma4-mtp-20260817.md).
+
+> **Benchmarking trap this round exposed.** The first bare Gemma pass, run right
+> after a model swap, read **25–30% low** and would have shown MTP at "+24–70%,
+> every cell" — dramatic and entirely false. `mtpbench.py`'s one-generation warm-up
+> is insufficient after a swap. Discard a full pass before timing, and reject any
+> bare baseline whose cells disagree by more than a few percent: bare decode on
+> these machines is flat.
 
 All reverted. Implementation notes if ever revisited: the DFlash engine bypasses
 the Scheduler and does not apply TurboQuant KV

@@ -20,15 +20,40 @@ anything. Reference material lives in `docs/` and is meant to be read on demand.
 1. **Identify the machine first.** This repo runs on two boxes with different
    memory subsystems. Any download / serve / benchmark step must run
    `scripts/detect_machine.sh` first, or its output is unattributable.
-2. **Never enable speculative or parallel decoding on these MoE models.**
-   Measured three ways on 2026-08-01 — DFlash −19…−29%, Google's own Gemma MTP
-   assistant −12%, DiffusionGemma −68%. On a sparse MoE, processing N positions
-   per forward pass activates the *union* of experts across those positions, so
-   the weight read grows with N.
-   **On a dense model it can pay, but only above ~2.0 accepted tokens/round**
-   (measured 2026-08-16 on Qwen3.8-27B: +12–28% on general text, −5…−10% on
-   code) — check omlx's `vlm_mtp stats` log line before trusting it, and note
-   `vlm_mtp_enabled` conflicts with TurboQuant KV, which the default model uses.
+2. **Speculative decoding is conditional — work out the break-even before
+   enabling it, never by reputation.** It ranges from −12% to +98% across the
+   machine × model combinations measured here. Parallel decoding (DiffusionGemma,
+   −68%) stays rejected everywhere.
+
+   The governing number is `speedup = accepted_tokens_per_round / c`, where `c` is
+   the cost of one verify forward in decode-steps. **Measure acceptance from
+   omlx's `vlm_mtp stats` log line — never assume it.**
+
+   | Machine | Model | `c` = break-even tokens/round | Measured |
+   |---|---|---:|---|
+   | M2 Pro | Qwen3.8-27B (dense) | **~2.04** | +12–28% general, −5…−10% code (2026-08-16) |
+   | M5 | Qwen3.8-27B (dense) | **~1.26** | **+41–98%, every cell** (2026-08-17) |
+   | M5 | gemma-4-26B-A4B (MoE) | **~2.70** | −0.6% general, **+21.5% code** (2026-08-17) |
+   | M2 Pro | gemma-4-26B-A4B (MoE) | — | −12%, different harness (2026-08-01) |
+
+   Two effects, don't conflate them: **M5's verify hardware is cheap** (neural
+   accelerators — `c` 1.26 vs M2 Pro's 2.04 on the same dense model), and **MoE
+   verify is expensive** (each extra verified position costs ~4.9× more than on a
+   dense model *on the same machine* — the union-of-experts weight read is real).
+   On M5 those roughly cancel, leaving Gemma 4 at break-even on general text and a
+   solid win on code, where Google's drafter hits 78% acceptance.
+
+   So: **on M5 enable it for dense models unconditionally; for Gemma 4 enable it
+   if your workload is code-heavy, and don't bother if it is chat-heavy.**
+   DFlash (−19…−29%) was only ever tested on M2 Pro and remains unretested on M5.
+
+   Traps: drafter attachment is **fail-soft** — if it fails you silently measure
+   bare, so confirm the `VLM MTP enabled ... drafter=` log line. `vlm_mtp_enabled`
+   is a per-model key in `~/.omlx/model_settings.json`, **not** in `settings.json`.
+   Its documented TurboQuant KV conflict does **not** bite on the M5 — neither
+   model there enables TurboQuant (`turboquant_kv_bits=None` at load); untested on
+   M2 Pro. And **warm up properly**: after a model swap the first full pass can
+   read 25–30% low, which fabricates spectacular fake speedups.
    Full data: [docs/performance.md](./docs/performance.md).
 3. **`make omlx-restart` after every `brew upgrade omlx`** — see the trap below.
 4. **Never `pip install` to fix a failing omlx endpoint.** The deps ship inside

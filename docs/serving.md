@@ -127,6 +127,57 @@ cold 19 GB load would take 15–20 s, so 0.41 s confirms no reload.
 
 So thinking toggles are free to switch; TurboQuant KV and MTP are not.
 
+### Enabling MTP speculative decoding
+
+**Read hard rule 2 in [AGENTS.md](../AGENTS.md) first** — whether this is a win
+depends on the machine, the model and the workload, and it ranges from −12% to
++98%. The mechanics:
+
+`vlm_mtp_enabled` is a **per-model** setting living in
+`~/.omlx/model_settings.json`. It is not a key in `settings.json`, and setting it
+in the Makefile does nothing.
+
+```jsonc
+// ~/.omlx/model_settings.json — create it if absent, then `make omlx-restart`
+{
+  "version": 1,
+  "models": {
+    "mlx-community__gemma-4-26B-A4B-it-qat-nvfp4": {
+      "vlm_mtp_enabled": true,
+      "vlm_mtp_draft_model": "mlx-community__gemma-4-26B-A4B-it-qat-assistant-nvfp4"
+    }
+  }
+}
+```
+
+`vlm_mtp_draft_model` takes a **model slug** (the `models/` dir name), resolved
+against omlx's discovered models. Deleting the file and restarting reverts.
+
+`PUT /admin/api/models/{id}/settings` sets the same thing over HTTP, but requires
+admin auth — it returns 401 unauthenticated, so the file is the scriptable path.
+
+**Always verify it actually armed.** Drafter attachment is *fail-soft*: if the
+drafter fails to load, omlx logs a warning and serves bare, so a benchmark would
+silently measure the baseline twice. After restart, confirm both:
+
+```bash
+make omlx-logs | grep -E "VLM MTP enabled|vlm_mtp stats"
+# VLM MTP enabled for <model>, drafter=<drafter-id>
+# vlm_mtp stats: ... accepted=715/927 (77.1%) tokens_per_round=3.31 block_size=4
+```
+
+That `tokens_per_round` is the number to compare against the model's break-even
+in AGENTS.md — it is the only way to know whether the feature is paying for
+itself.
+
+**Conflicts.** omlx rejects `vlm_mtp_enabled` combined with `dflash_enabled`,
+`specprefill_enabled`, `mtp_enabled` or `turboquant_kv_enabled`, and with any
+processor-backed setting (`repetition_penalty` ≠ 1.0, `presence_penalty` ≠ 0.0,
+`thinking_budget_enabled`, `guided_grammar_enabled`) — those need per-request
+logits processors that the vlm_mtp decode path never applies, so the toggle would
+silently no-op. Neither model on the M5 enables TurboQuant KV, so that particular
+conflict does not arise there.
+
 **Locking a setting against clients.** `forced_ct_kwargs` is a per-model list of
 `chat_template_kwargs` keys the client **cannot** override. The precedence chain
 (`model_settings.py::merge_chat_template_kwargs`), lowest to highest:

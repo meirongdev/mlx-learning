@@ -92,9 +92,42 @@ vllm-mlx is **5–10% faster** on text LLMs and stays ahead but converges as war
 
 **M2 Pro:** done — see `m2pro-omlx-vs-vllm-mlx-20260503.md`. The gap was *larger*, not smaller (+28% for vllm-mlx on std 4bit / NVFP4), but it closed entirely once omlx reached 0.5.4rc1 (57.9 vs 58.8 tok/s). See [`../performance.md`](../performance.md).
 
+### Speculative decoding (MTP) on a dense model — Qwen3.8-27B mxfp4
+
+Same model, drafter, omlx 0.5.7 and prompts on both machines. Acceptance is
+identical across machines; only verify cost differs.
+
+| cell | M2 Pro bare | M2 Pro + MTP | M5 bare | M5 + MTP |
+|---|---:|---:|---:|---:|
+| general 512 | 11.62 | 11.52 (−1%) | 8.50 | **15.01 (+77%)** |
+| general 1024 | 11.83 | 13.14 (+11%) | 8.45 | **16.75 (+98%)** |
+| code 512 | 11.48 | 11.23 (−2%) | 8.49 | **12.09 (+42%)** |
+| code 1024 | 11.75 | 11.30 (−4%) | 8.50 | **11.98 (+41%)** |
+
+Break-even is **~2.04** accepted tokens/round on M2 Pro but **~1.26** on M5, so MTP
+is a coin-flip on one machine and an unconditional win on the other. It also
+inverts the machine ranking: M2 Pro leads bare, M5 leads with MTP. Reports:
+`m2pro-qwen38-27b-mtp-20260816.md`, `m2pro-qwen38-27b-mxfp4-mtp-20260816.md`,
+`m5-qwen38-27b-mxfp4-mtp-20260817.md`.
+
+### MTP on the MoE — Gemma 4 26B-A4B + Google's assistant, M5
+
+| cell | bare | + MTP | Δ | tokens/round |
+|---|---:|---:|---:|---:|
+| general 512 | 38.59 | 38.25 | −0.9% | 2.57 |
+| general 1024 | 38.67 | 38.56 | −0.3% | 2.63 |
+| code 512 | 39.05 | **47.44** | **+21.5%** | 3.36 |
+| code 1024 | 38.87 | **47.23** | **+21.5%** | 3.34 |
+
+The M2 Pro's −12% does not reproduce on M5. Break-even is ~2.70 tokens/round, so
+general text sits on the fence and code clears it. Comparing against the dense model
+on the same machine, each extra verified position costs **~4.9× more on the MoE** —
+the union-of-experts penalty, quantified. Report: `m5-gemma4-mtp-20260817.md`.
+
 ## Methodology notes
 
 - **Prefill is included in tok/s.** `mlx-bench` measures wall-clock from request → response, so the published number includes prompt processing. With the default ~30-token prompt and 512+ generated tokens, prefill is a small share (<5%).
+- **Warm up harder after a model swap.** `scripts/mtpbench.py` warms with one short generation, which was **not enough** for Gemma 4 loaded right after evicting another 15 GB model: the whole first pass read 25–30% low and would have reported a fake "+24–70%" MTP win (2026-08-17). Discard a full pass before timing, and treat any bare baseline whose cells disagree by more than a few percent as invalid — bare decode on these machines is flat across prompt and length.
 - **Models are unloaded between runs** so KV cache doesn't carry over. Cold load times in the log are first-time-from-disk after install; OS file cache may make subsequent loads faster.
 - **GPU wired memory limit** matters at 32 GB. Always check `make detect-machine` shows `GPU wired limit: 26000+ MB` before benchmarking.
 - **omlx server config.** The 2026-05-03 runs used `--max-process-memory 90% --hot-cache-max-size 4GB --max-concurrent-requests 2 --initial-cache-blocks 1024`; `--max-process-memory` was removed in omlx 0.4.x (now `--memory-guard`). Changing these invalidates comparisons — and note that on these machines the *live* server reads `~/.omlx/settings.json`, not the Makefile flags, so record what `settings.json` actually held.
