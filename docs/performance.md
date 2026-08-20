@@ -233,7 +233,7 @@ Qwen3.6-35B-A3B, warmup + 512-token generation.
 
 | Machine      | Bandwidth   | Best quant | tok/s | Notes |
 |--------------|-------------|------------|------:|-------|
-| M2 Pro 32 GB | 200 GB/s    | NVFP4 | **58.04 warm** (omlx 0.5.7) | 2026-08-16. Was 57.9 on 0.5.4rc1 — flat across that upgrade. On 0.4.x this box measured 45.89 / 45.36 / 45.36, all tied; **the 0.4.x → 0.5.4rc1 upgrade alone added +27%** |
+| M2 Pro 32 GB | 200 GB/s    | NVFP4 | **59.11 warm** (omlx 0.6.3rc2) | 2026-08-21. Was 58.04 on 0.5.7 and 57.9 on 0.5.4rc1 — flat across both upgrades. On 0.4.x this box measured 45.89 / 45.36 / 45.36, all tied; **the 0.4.x → 0.5.4rc1 upgrade alone added +27%** |
 | M5 32 GB     | 153.6 GB/s  | NVFP4 | **39.74 cold / 49.14 warm** | omlx 0.4.x, not re-measured on 0.5.x. DWQ: 31.33 cold / 32.11 warm |
 
 Gemma 4 (`gemma-4-26B-A4B-it-qat-nvfp4`): **44.3 tok/s warm** on M2 Pro /
@@ -249,6 +249,34 @@ omlx 0.5.4rc1; ~30 tok/s on M5 under 0.4.x.
 **DWQ under vllm-mlx is significantly slower than std 4-bit / NVFP4** (~46 vs
 ~59 tok/s on M2 Pro) — vllm-mlx lacks optimized kernels for DWQ's per-group
 dequant scheme. Under omlx all three formats are equal on M2 Pro.
+
+### MTPLX 2.9.0 (native MTP, alternative engine)
+
+Measured on M2 Pro 2026-08-21 —
+[`m2pro-mtplx-qwen36-35b-20260821.md`](./benchmarks/m2pro-mtplx-qwen36-35b-20260821.md).
+MTPLX drafts from the target model's **own MTP heads**; omlx's `vlm_mtp` attaches an
+**external** drafter. It refuses to attach an MTP sidecar to an arbitrary trunk, so its
+own `Youssofal/…-MTPLX-Optimized-Speed-FP16` build (affine 4-bit gs64) is forced — the
+quantization change comes with the engine.
+
+| Config | tok/s (512, median of 3) | vs omlx 0.6.3rc2 |
+|---|---:|---:|
+| omlx, `Qwen3.6-35B-A3B-nvfp4` | **59.11** | baseline |
+| MTPLX, `--no-mtp` | **55.06** | **−6.9%** |
+| MTPLX, `--depth 1` | **62.16** | **+5.2%** |
+
+**MTP earns +12.9% inside MTPLX, but its bare decode starts 6.9% behind omlx, so the net
+is +5.2%** — not enough to move the deployment, given a second 20 GB checkpoint, the loss
+of nvfp4 and of omlx's embeddings/rerank/audio endpoints and multi-model LRU, and a
+run-to-run spread that widens from 0.16% to ±3.5%.
+
+Depth 1 only: acceptance falls 87% → 44% → 25% over depths 1–3, and **D3 is a net loss**
+(0.95× AR). Effective `c` ≈ **1.66** at depth 1 — cheaper than the ~2.04 omlx's external
+drafter needs on a *dense* model on this same box, despite this being a MoE. That is the
+predicted signature of the affine-gated fast verify kernel finally arming; see
+[`m2pro-qwen38-27b-mtp-20260816.md`](./benchmarks/m2pro-qwen38-27b-mtp-20260816.md) for
+why it never armed under omlx. Code workloads — the ones that inverted the sign on both
+prior MTP investigations — are **untested**.
 
 > ⚠️ **The "vllm-mlx is ~28% faster" conclusion is superseded on the M2 Pro.**
 > Those runs were against omlx **0.4.x**. omlx 0.5.4rc1 decodes at 57.9 tok/s,

@@ -80,3 +80,6 @@ bin/
 models-sd/
 sd-server.pid
 sd-server.log
+
+# mtplx CLI artifacts (tune/bench raw logs)
+outputs/
