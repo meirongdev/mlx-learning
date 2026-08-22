@@ -73,6 +73,12 @@ NVFP4 (~49 tok/s) beat the historical M2 Pro 4-bit ceiling (45.8) despite ~25%
 less bandwidth. Likely cause: M5's GPU neural accelerators (Oct 2025) and/or
 omlx-specific FP4 kernels.
 
+> **Superseded early reading of the same batch.** It was first summarized as a
+> *length* effect — std 4bit overtaking NVFP4 at 1024 tokens (45.89 vs 41.05), NVFP4
+> "degrading −19.6% from 512 → 1024". Those cells were cold/warm-mixed and do not line
+> up with the table above; the cold/warm split is the axis that reproduced. Treat
+> length-dependence on M5 as unmeasured rather than observed.
+
 **On the M2 Pro all three formats tie** (omlx 0.4.x: std 4bit 45.89, DWQ 45.36,
 NVFP4 45.36 — within 1%). Expected: no native FP4 hardware, and all formats read
 the same ~19 GB, so the 200 GB/s bus is the ceiling regardless of format.

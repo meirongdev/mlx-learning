@@ -110,18 +110,20 @@ Options: `--omlx-url`, `--prompt`, `--max-tokens`, `--warmup/--no-warmup`,
 `--unload/--no-unload`, `--verbose`. Use `--no-unload` against vllm-mlx, which
 has no per-model unload endpoint.
 
-Current headline: **57.9 tok/s** warm @ 512 tokens for Qwen3.6-35B-A3B-nvfp4 on
-the M2 Pro under omlx 0.5.4rc1. Two findings worth knowing before optimizing
+Current headline: **59.11 tok/s** warm @ 512 tokens for Qwen3.6-35B-A3B-nvfp4 on
+the M2 Pro under omlx 0.6.3rc2. Two findings worth knowing before optimizing
 anything:
 
 - **Quantization choice is machine-dependent.** On M2 Pro every 4-bit format
   ties (bandwidth-bound). On M5, NVFP4 wins by 1.25–1.53× thanks to its FP4 GPU
   accelerators — the opposite of published MLX guidance.
-- **Speculative / parallel decoding is a measured loss on these MoE models** —
-  DFlash −19…−29%, Gemma's own MTP assistant −12%, DiffusionGemma −68%.
+- **Speculative decoding is conditional, not a blanket loss.** Measured here it
+  ranges from −12% to +98% depending on machine × model × runtime, so work out the
+  break-even (`accepted_tokens_per_round / c`) before enabling it. Parallel decoding
+  (DiffusionGemma, −68%) stays rejected everywhere.
 
 Full tables, methodology, and reasoning: [docs/performance.md](./docs/performance.md).
-Raw reports: [docs/benchmarks/](./docs/benchmarks/).
+Per-run reports: [docs/benchmarks/](./docs/benchmarks/).
 
 ## Development
 

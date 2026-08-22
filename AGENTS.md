@@ -13,8 +13,12 @@ lives in `docs/` and `README.md`, to be read on demand.
 | What's on disk, model slugs, naming, per-endpoint requirements | [docs/models.md](./docs/models.md) |
 | Benchmark numbers, break-even tables, quantization findings, what's been tried | [docs/performance.md](./docs/performance.md) |
 | Server setup, omlx config, MTP mechanics, memory tuning, assistant configs | [docs/serving.md](./docs/serving.md) |
-| Raw benchmark reports | [docs/benchmarks/](./docs/benchmarks/) |
+| Per-run benchmark reports, and how to run one | [docs/benchmarks/](./docs/benchmarks/) |
 | Commands, layout, onboarding | [README.md](./README.md) and `make help` |
+
+When they disagree, **this file's rules and the `docs/` numbers win.** `README.md`'s
+headline figures are derived from `docs/performance.md` — move a number there and
+update the README in the same commit, or the two start contradicting each other.
 
 ## The machines
 
@@ -29,11 +33,22 @@ Two 32 GB boxes with different memory subsystems. The Makefile picks
 Decode is memory-bandwidth bound, so **the older M2 Pro is faster** for plain
 decode — a plain-decode statement only, since speculation inverts the ranking.
 
+Four server stacks are wired up, and two of them want the same port:
+
+| Stack | Start | Port | Role |
+|-------|-------|------|------|
+| omlx | `make omlx-start` | `:8000` | **Default.** Chat, VLM, embeddings, rerank, audio |
+| vllm-mlx | `make vllm-start` | `:8000` | Alternative engine — **collides with omlx, stop one before starting the other** |
+| stable-diffusion.cpp | `make sd-start` | `:7860` | Text-to-image (FLUX.2 Klein 4B) |
+| mlx_lm.server | `make server-start` | `:5001` | Legacy, single-model, testing only |
+
 ## Hard rules
 
 1. **Identify the machine first.** Any download / serve / benchmark step runs
    `make detect-machine` (or `scripts/detect_machine.sh`) first, or its output is
-   unattributable.
+   unattributable. Failure is silent and expensive: the Makefile falls back to the
+   Qwen `MODEL_REPO`, which is **not on disk on the M5** (removed 2026-06-28), so a
+   failed detect on that box means a 19 GB download and a benchmark of the wrong model.
 2. **Speculative decoding is conditional — work out the break-even before
    enabling it, never by reputation.** It ranges from −12% to +98% across the
    machine × model × runtime combinations measured here; parallel decoding
@@ -77,7 +92,9 @@ decode — a plain-decode statement only, since speculation inverts the ranking.
   performance, state the delta, the machine (`make detect-machine`), and the
   server version — a number without all three is not reviewable.
 - Write benchmark conclusions up as a dated `.md` in `docs/benchmarks/` and fold
-  the headline into `docs/performance.md`. Don't commit raw run logs.
+  the headline into `docs/performance.md` — **the one running summary for numbers.**
+  `docs/benchmarks/README.md` is an index: add the report's row, put no numbers in it.
+  Don't commit raw run logs.
 
 ## References
 
