@@ -71,6 +71,11 @@ strict = true
 ignore_missing_imports = true
 warn_return_any = true
 warn_unused_configs = true
+# Downloaded model weights are gitignored, but `mypy .` does not read .gitignore
+# (ruff does). Some HF repos ship their own Python — e.g.
+# models/kamilobad__GLM-ASR-Nano-2512-8bit carries modeling_glmasr.py and
+# inference.py — which produced 50 strict-mode errors in vendored code.
+exclude = '^(models|models-sd|models_cache|bin)/'
 
 [tool.pytest.ini_options]
 minversion = "6.0"
