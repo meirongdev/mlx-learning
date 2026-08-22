@@ -80,6 +80,40 @@ the same ~19 GB, so the 200 GB/s bus is the ceiling regardless of format.
 So: **M5 → NVFP4. M2 Pro → any of the three.** (M5 no longer keeps a Qwen as of
 2026-06-28; if you reintroduce one, prefer `mlx-community/Qwen3.6-35B-A3B-nvfp4`.)
 
+## Speculative decoding: the break-even table
+
+`speedup = accepted_tokens_per_round / c`, where `c` is the cost of one verify
+forward expressed in decode-steps. Break-even is exactly `accepted == c`.
+**Measure acceptance, never assume it** — omlx prints it on the `vlm_mtp stats`
+log line ([serving.md](./serving.md#enabling-mtp-speculative-decoding)), MTPLX
+prints it from `mtplx tune`.
+
+| Machine | Model | Drafter | `c` = break-even tokens/round | Measured |
+|---|---|---|---:|---|
+| M2 Pro | Qwen3.8-27B (dense) | omlx `vlm_mtp`, external | **~2.04** | +12–28% general, −5…−10% code (2026-08-16) |
+| M5 | Qwen3.8-27B (dense) | omlx `vlm_mtp`, external | **~1.26** | **+41–98%, every cell** (2026-08-17) |
+| M5 | gemma-4-26B-A4B (MoE) | omlx `vlm_mtp`, external | **~2.70** | −0.6% general, **+21.5% code** (2026-08-17) |
+| M2 Pro | gemma-4-26B-A4B (MoE) | omlx `vlm_mtp`, external | — | −12%, different harness (2026-08-01) |
+| M2 Pro | Qwen3.6-35B-A3B (MoE) | MTPLX, model's own MTP heads | **~1.66** | +12.9% vs its own AR, +5.2% vs omlx (2026-08-21) |
+
+Two effects, don't conflate them: **M5's verify hardware is cheap** (neural
+accelerators — `c` 1.26 vs M2 Pro's 2.04 on the same dense model), and **MoE
+verify is expensive** (each extra verified position costs ~4.9× more than on a
+dense model *on the same machine* — the union-of-experts weight read is real).
+On M5 those roughly cancel, leaving Gemma 4 at break-even on general text and a
+solid win on code, where Google's drafter hits 78% acceptance.
+
+So: **on M5 enable it for dense models unconditionally; for Gemma 4 enable it if
+your workload is code-heavy, and don't bother if it is chat-heavy.** DFlash
+(−19…−29%) was only ever tested on M2 Pro and remains unretested on M5. Parallel
+decoding (DiffusionGemma, −68%) stays rejected everywhere.
+
+**Quote the *effective* `c`** — backed out of the measured speedup — not the one
+implied by verify time alone. The latter omits the drafter's own forward pass and
+flattered MTPLX by 12% (1.46 vs 1.66 at depth 1).
+
+The sections below are the evidence behind each row, oldest first.
+
 ## Speculative and parallel decoding lose on these MoE models — on the M2 Pro
 
 Measured three ways on the M2 Pro, 2026-08-01. **Do not retry these blind.**
@@ -239,6 +273,32 @@ Qwen3.6-35B-A3B, warmup + 512-token generation.
 Gemma 4 (`gemma-4-26B-A4B-it-qat-nvfp4`): **44.3 tok/s warm** on M2 Pro /
 omlx 0.5.4rc1; ~30 tok/s on M5 under 0.4.x.
 
+#### Ornith 1.5 beats the deployed Qwen3.6 on decode, M2 Pro
+
+Measured 2026-08-21, omlx 0.6.3rc2, same box and session —
+[`m2pro-ornith-1.5-35b-a3b-4bit-20260821.md`](./benchmarks/m2pro-ornith-1.5-35b-a3b-4bit-20260821.md).
+`ornith-ai/Ornith-1.5-35B-A3B-MLX-4bit` is a `qwen3_5_moe` MoE in **affine 4-bit gs64**,
+against the deployed NVFP4 Qwen3.6 at near-identical size.
+
+| Model | Quant | Decode (512) | Prefill (~4.9k) | Resident |
+|---|---|---:|---:|---:|
+| Ornith-1.5-35B-A3B-MLX-4bit | affine 4-bit gs64 | **63.33** (+7.7%) | 392 (−3.4%) | 18.41–18.50 GB |
+| Qwen3.6-35B-A3B-nvfp4 | NVFP4 | 58.82 | **406** | 19.21–19.36 GB |
+
+**Decode +7.7%, prefill −3.4%** — the faster decoder is the slower prefiller. Two variables
+move together (model family *and* quant format), so this is not an isolated format result;
+it does not contradict "all three formats tie on M2 Pro", which was measured within one model.
+
+⚠️ **omlx's affine-4bit prefill fast path is M5-only.** `qwen35_q4_mlp` passes every
+declared gate for this checkpoint (affine, gs64, 4-bit, ≥2048 prompt tokens) and still
+never armed: it is gated behind `is_nax_available()`, **False on M2 Pro**. Do not expect a
+prefill win from choosing an affine 4-bit checkpoint on this box — and re-run this pair on
+the M5, where the gate should open.
+
+Neither checkpoint can speculate: both declare `mtp_num_hidden_layers: 1` and ship **no
+`mtp.*` weights**. Ornith's MLX build is also **text-only** — the upstream model is a VLM,
+but the conversion carries no `visual.*` weights.
+
 ### vllm-mlx 0.3.0 (alternative engine)
 
 | Machine      | Best quant        | tok/s (512)     | tok/s (1024 warm) | Notes |
@@ -292,8 +352,16 @@ make bench            # this machine's MODEL_SLUG
 make bench BENCH_MODELS="slug1 slug2" BENCH_ARGS="--max-tokens 1024"
 ```
 
-`mlx-bench` loads → warms → times → unloads each model in sequence so memory
-doesn't bleed between runs. Notes on comparability:
+`mlx-bench` (`src/mlx_learning/benchmark_cli.py`, registered in
+`[project.scripts]`) drives an **OpenAI-compatible HTTP endpoint** — it never
+loads MLX in-process, so `--omlx-url` retargets it at any compatible server
+(vllm-mlx, `mlx_lm.server`, MTPLX). Per model it loads → warms → times a
+fixed-length generation against `/v1/chat/completions` → unloads (`--no-unload`
+keeps it resident), so memory doesn't bleed between runs. Notes on comparability:
+
+- **Warm up properly.** After a model swap the first full pass can read 25–30%
+  low, which fabricates spectacular fake speedups. Discard it, or keep the model
+  resident with `--no-unload` and take a later run.
 
 - **Prefill is included.** Wall-clock from request → response, so the published
   number includes prompt processing. With the default ~30-token prompt and 512+

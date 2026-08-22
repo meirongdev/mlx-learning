@@ -135,15 +135,25 @@ make typecheck   # mypy --strict
 ## Layout
 
 ```
-Makefile          shared config + Setup/Development targets
-make/*.mk         one file per server stack (model, omlx, vllm, sd, legacy)
-docs/             models.md, performance.md, serving.md, benchmarks/
-scripts/          bootstrap.sh, omlx.sh, detect_machine.sh, verify_model.py
-src/mlx_learning/ the `mlx-bench` CLI
+Makefile             shared config + Setup/Development targets, includes make/*.mk
+make/
+  model.mk           model download, machine detection, system tuning
+  omlx.mk            omlx lifecycle + `bench`
+  vllm.mk            vllm-mlx lifecycle
+  sd.mk              stable-diffusion.cpp lifecycle
+  legacy.mk          mlx_lm.server lifecycle + `verify`
+docs/                models.md, performance.md, serving.md, benchmarks/
+scripts/
+  bootstrap.sh       idempotent one-click setup (make quickstart)
+  omlx.sh            brew-aware omlx lifecycle — all the real logic lives here
+  detect_machine.sh  chip / RAM / bandwidth detection
+  verify_model.py    smoke-test a server + inspect a local config.json
+src/mlx_learning/    the `mlx-bench` CLI (benchmark_cli.py)
 models/ models-sd/ bin/   downloaded weights and binaries (gitignored)
 ```
 
-Engineering context — measured benchmarks, operational traps, model catalog,
-conventions — lives in **[AGENTS.md](./AGENTS.md)** and `docs/`.
+Rules, traps and conventions live in **[AGENTS.md](./AGENTS.md)**; the
+supporting detail — measured benchmarks, model catalog, server configuration —
+lives in `docs/`.
 `CLAUDE.md`, `QWEN.md` and `.github/copilot-instructions.md` are symlinks to
 `AGENTS.md`, so every assistant reads the same file.

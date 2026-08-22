@@ -14,6 +14,8 @@ omlx and vllm-mlx both bind `:8000` — stop one before starting the other.
 
 ## omlx
 
+Both machines switched to omlx as their serving stack on 2026-06-28.
+
 Endpoints on `:8000`: `/v1/chat/completions`, `/v1/completions`, `/v1/models`,
 `/v1/embeddings`, `/v1/rerank`, `/v1/responses`, `/v1/audio/{speech,transcriptions,voices}`,
 `/v1/messages`, `/v1/mcp/*`, plus an `/admin` UI.
@@ -39,7 +41,12 @@ applies to the nohup source-install fallback (`OMLX_FORCE_NOHUP=1`). **To change
 live behaviour: edit `~/.omlx/settings.json`, then `make omlx-restart`.**
 (The M2 Pro's `settings.json` currently uses tier `custom` with a 30 GB ceiling.)
 
-`scripts/omlx.sh` owns all lifecycle logic and is brew-aware: it delegates
+The Makefile targets are thin wrappers: `scripts/omlx.sh` owns all of omlx's
+real logic, while the other three stacks (vllm-mlx, stable-diffusion.cpp,
+`mlx_lm.server`) are plain nohup + PID-file management inside their own
+`make/*.mk`.
+
+`scripts/omlx.sh` is brew-aware: it delegates
 start/stop/restart to `brew services` when omlx is Homebrew-managed (which owns
 `:8000` via KeepAlive), polls `/v1/models` until healthy, and force-recovers from
 an orphaned `omlx-server` that survives a `brew services restart`.
@@ -167,8 +174,8 @@ make omlx-logs | grep -E "VLM MTP enabled|vlm_mtp stats"
 ```
 
 That `tokens_per_round` is the number to compare against the model's break-even
-in AGENTS.md — it is the only way to know whether the feature is paying for
-itself.
+in [the table in performance.md](./performance.md#speculative-decoding-the-break-even-table)
+— it is the only way to know whether the feature is paying for itself.
 
 **Conflicts.** omlx rejects `vlm_mtp_enabled` combined with `dflash_enabled`,
 `specprefill_enabled`, `mtp_enabled` or `turboquant_kv_enabled`, and with any

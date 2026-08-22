@@ -71,7 +71,8 @@ Per rule 2, `speedup = accepted_tokens_per_round / c`. One AR decode step here i
 
 Effective `c` exceeds the verify-only `c` by ~0.2 at every depth — that gap is the draft
 head's own forward plus sampling overhead, which the verify_ms figure does not include.
-**Quote the effective number when comparing against the table in `AGENTS.md`**; the
+**Quote the effective number when comparing against the break-even table in
+[`../performance.md`](../performance.md#speculative-decoding-the-break-even-table)**; the
 verify-only figure flatters the method by ~12%.
 
 Against that table: M2 Pro / dense Qwen3.8-27B / omlx `vlm_mtp` needs **~2.04**. Here a
