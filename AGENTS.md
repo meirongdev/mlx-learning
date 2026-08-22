@@ -12,7 +12,7 @@ lives in `docs/` and `README.md`, to be read on demand.
 |------|------|
 | What's on disk, model slugs, naming, per-endpoint requirements | [docs/models.md](./docs/models.md) |
 | Benchmark numbers, break-even tables, quantization findings, what's been tried | [docs/performance.md](./docs/performance.md) |
-| Server setup, omlx config, MTP mechanics, memory tuning, assistant configs | [docs/serving.md](./docs/serving.md) |
+| Server setup, omlx config, MTP mechanics, memory tuning, metrics/Prometheus, assistant configs | [docs/serving.md](./docs/serving.md) |
 | Per-run benchmark reports, and how to run one | [docs/benchmarks/](./docs/benchmarks/) |
 | Commands, layout, onboarding | [README.md](./README.md) and `make help` |
 
@@ -71,7 +71,14 @@ Four server stacks are wired up, and two of them want the same port:
    the Homebrew build; a 500 means you're on a stale server, not a missing package.
 7. **The live omlx config is `~/.omlx/settings.json`**, not the Makefile flags.
    Editing `OMLX_EXTRA_ARGS` changes nothing on these machines.
-8. **Quote benchmark numbers with their machine and server version.** Both move
+8. **Never flip `skip_api_key_verification: true` to reach the admin API.** It is
+   the obvious-looking way to script `/admin/api/stats`, and it turns the entire
+   admin panel — settings edits, cache clears — into an unauthenticated endpoint,
+   because `server.host` is `0.0.0.0` with `cors_origins: ["*"]`. Admin metrics
+   need `auth.api_key` set plus a session cookie; the auth-free counter source is
+   `~/.omlx/stats.json` via `make omlx-metrics`.
+   [docs/serving.md](./docs/serving.md#metrics-prometheus)
+9. **Quote benchmark numbers with their machine and server version.** Both move
    results more than quantization choice does (omlx 0.4.x → 0.5.4rc1 alone was
    +27% on the M2 Pro).
 

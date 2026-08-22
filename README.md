@@ -94,6 +94,23 @@ engine, also port 8000), **stable-diffusion.cpp** (`make sd-start`, text-to-imag
 on 7860), and the legacy **mlx_lm.server** (`make server-start`, port 5001).
 Setup and trade-offs for all four: [docs/serving.md](./docs/serving.md).
 
+### Metrics
+
+omlx has no `/metrics` endpoint. It does keep counters in `~/.omlx/stats.json`,
+flushed every 300s, and `make omlx-metrics` renders those into a Prometheus
+textfile-collector snapshot — no auth, and nothing hits the inference server:
+
+```bash
+make omlx-metrics-preview    # render to stdout, write nothing
+make omlx-metrics            # write $OMLX_TEXTFILE_DIR/omlx.prom
+```
+
+node_exporter only reads the file if it was started with
+`--collector.textfile.directory`. Metric names, the `rate()` queries worth
+running, and the four things this cannot measure (latency percentiles, memory
+pressure, queue depth, speculative-decoding acceptance):
+[docs/serving.md](./docs/serving.md#metrics-prometheus).
+
 ## Benchmarking
 
 `mlx-bench` benchmarks models over an OpenAI-compatible HTTP endpoint. For each
@@ -140,7 +157,7 @@ make typecheck   # mypy --strict
 Makefile             shared config + Setup/Development targets, includes make/*.mk
 make/
   model.mk           model download, machine detection, system tuning
-  omlx.mk            omlx lifecycle + `bench`
+  omlx.mk            omlx lifecycle, metrics, + `bench`
   vllm.mk            vllm-mlx lifecycle
   sd.mk              stable-diffusion.cpp lifecycle
   legacy.mk          mlx_lm.server lifecycle + `verify`
@@ -150,7 +167,8 @@ scripts/
   omlx.sh            brew-aware omlx lifecycle — all the real logic lives here
   detect_machine.sh  chip / RAM / bandwidth detection
   verify_model.py    smoke-test a server + inspect a local config.json
-src/mlx_learning/    the `mlx-bench` CLI (benchmark_cli.py)
+src/mlx_learning/    the `mlx-bench` CLI (benchmark_cli.py) and the Prometheus
+                     textfile collector (omlx_textfile_collector.py)
 models/ models-sd/ bin/   downloaded weights and binaries (gitignored)
 ```
 

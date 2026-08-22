@@ -9,7 +9,8 @@
 # All lifecycle logic lives in scripts/omlx.sh (brew-vs-nohup detection, health
 # polling, orphan recovery); these targets only pass configuration through.
 
-.PHONY: omlx-install omlx-start omlx-stop omlx-restart omlx-status omlx-logs bench
+.PHONY: omlx-install omlx-start omlx-stop omlx-restart omlx-status omlx-logs \
+	omlx-metrics omlx-metrics-preview bench
 
 OMLX_HOST      ?= 0.0.0.0
 OMLX_PORT      ?= 8000
@@ -71,6 +72,21 @@ omlx-status: ## Show mode, endpoint, health, and loaded model count
 
 omlx-logs: ## Tail the omlx log (brew log if brew-managed)
 	@$(OMLX_ENV) bash scripts/omlx.sh logs
+
+##@ omlx observability
+
+# omlx 0.6.x has no /metrics endpoint. These render ~/.omlx/stats.json into a
+# Prometheus textfile-collector snapshot. node_exporter must be started with
+# --collector.textfile.directory=$(OMLX_TEXTFILE_DIR) or the file is ignored.
+OMLX_STATS_PATH   ?= $(HOME)/.omlx/stats.json
+OMLX_TEXTFILE_DIR ?= $(HOME)/.local/var/lib/node_exporter/textfile_collector
+
+omlx-metrics: ## Write ~/.omlx/stats.json to the node_exporter textfile dir once
+	$(UV) run omlx-textfile-collector \
+		--stats-path "$(OMLX_STATS_PATH)" --output-dir "$(OMLX_TEXTFILE_DIR)"
+
+omlx-metrics-preview: ## Print the .prom rendering to stdout without writing it
+	@$(UV) run omlx-textfile-collector --stats-path "$(OMLX_STATS_PATH)" --stdout
 
 ##@ Benchmark
 

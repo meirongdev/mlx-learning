@@ -30,6 +30,7 @@ server = [
 
 [project.scripts]
 mlx-bench = "mlx_learning.benchmark_cli:app"
+omlx-textfile-collector = "mlx_learning.omlx_textfile_collector:app"
 
 [tool.uv]
 dev-dependencies = [

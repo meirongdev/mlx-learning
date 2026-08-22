@@ -75,6 +75,9 @@ vllm-server.log
 docs/benchmarks/*.log
 docs/benchmarks/*.jsonl
 
+# Prometheus textfile-collector snapshots (make omlx-metrics)
+*.prom
+
 # stable-diffusion.cpp
 bin/
 models-sd/

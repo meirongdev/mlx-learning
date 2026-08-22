@@ -313,6 +313,92 @@ omlx under Homebrew logs to `$(brew --prefix)/var/log/omlx.log` and
 source-install fallback. The other three servers do use repo-root PID + log
 files: `vllm-server.*`, `sd-server.*`, `mlx-server.*`. All are gitignored.
 
+## Metrics (Prometheus)
+
+omlx 0.6.3rc2 has **no `/metrics` endpoint** and bundles no `prometheus_client`
+or OpenTelemetry — `/metrics`, `/v1/metrics`, `/api/metrics`, `/stats` and
+`/v1/stats` all 404. Its counters live in two places instead:
+
+| Source | Auth | Cadence | Has |
+|--------|------|---------|-----|
+| `GET /admin/api/stats`, `GET /admin/api/activity` | admin session cookie | live | tokens, requests, **memory pressure, queue depth**, all-time averages |
+| `~/.omlx/stats.json` | none | flushed every 300s | raw cumulative tokens/requests/durations, per model |
+
+The admin API needs a cookie from `POST /admin/api/login`, which requires
+`auth.api_key` to be set in `~/.omlx/settings.json`. It is currently `null`, so
+those endpoints return 401 to anything scripted. Do **not** reach for
+`skip_api_key_verification: true` to dodge that — `server.host` is `0.0.0.0`
+with `cors_origins: ["*"]`, so it would open the whole admin panel (settings
+edits, cache clears) to the LAN and Tailscale.
+
+### The textfile collector
+
+`make omlx-metrics` renders `stats.json` into a Prometheus textfile-collector
+snapshot. No auth, and nothing hits the inference server.
+
+```bash
+make omlx-metrics-preview    # render to stdout, write nothing
+make omlx-metrics            # write $OMLX_TEXTFILE_DIR/omlx.prom
+```
+
+Default output is
+`~/.local/var/lib/node_exporter/textfile_collector/omlx.prom`; override with
+`OMLX_TEXTFILE_DIR`. Run it from cron/launchd every 60s.
+
+**node_exporter must be told where to look.** The MacBook's agent runs bare
+`--web.listen-address=:9100`, so the textfile collector currently reads nothing.
+The plist is Ansible-managed (`homelab/macbook/ansible/playbooks/node-exporter.yaml`,
+"Do not edit by hand") — add the flag there, not in `~/Library/LaunchAgents`:
+
+```
+--collector.textfile.directory=/Users/matthew/.local/var/lib/node_exporter/textfile_collector
+```
+
+Verify with `node_textfile_scrape_error 0` on `:9100/metrics`.
+
+### Querying it
+
+The file stores raw cumulative sums, not the pre-averaged `avg_prefill_tps` the
+admin endpoint returns — that average is smeared over all time and cannot show a
+trend, while `rate()` over these counters can:
+
+```promql
+# prefill tok/s. Cached tokens are served from the KV cache and never
+# prefilled, so they come out of the numerator.
+rate(omlx_processed_prompt_tokens_total[30m]) / rate(omlx_prefill_seconds_total[30m])
+
+# decode tok/s, per model
+rate(omlx_model_completion_tokens_total[30m]) / rate(omlx_model_generation_seconds_total[30m])
+
+# KV cache hit ratio
+rate(omlx_cached_prompt_tokens_total[30m]) / rate(omlx_prompt_tokens_total[30m])
+```
+
+Every metric is emitted twice: unlabelled (`omlx_*`, server-wide) and per model
+(`omlx_model_*{model="<slug>"}`). Don't mix them in one `sum()`.
+
+**Keep `rate()` windows ≥ 15m, 30m+ preferred.** The source file only lands
+every 300s (`server_metrics._SAVE_INTERVAL`), so the counters are step-shaped
+and any shorter window mostly reads zero.
+
+### What it cannot tell you
+
+- **Latency.** Counters and all-time averages only — no TTFT, no percentiles,
+  no per-status-code errors. Those need client-side instrumentation.
+- **Memory pressure and queue depth.** Admin-API only.
+- **Speculative-decoding acceptance.** `scheduler.py` computes the acceptance
+  rate purely to log it; it never reaches `ServerMetrics`. Rule 3 stands — read
+  it off the `vlm_mtp stats:` log line.
+- **Prefill-guard rejections.** `ServerMetrics.preflight_rejections` defines
+  `hard_limit` / `admission_paused` buckets, but `record_preflight_rejection()`
+  has **no caller anywhere in the package** and no route exposes it. With
+  `prefill_memory_guard` on and a 30 GB custom ceiling, guard rejections are
+  currently invisible from every source, this collector included.
+
+Series count grows with the model catalog — `stats.json` keeps every model ever
+served (27 today) and they are never evicted, so retired models keep reporting
+flat counters forever.
+
 ## Pointing coding assistants at omlx
 
 Use the `__` slug, and update it whenever the default model changes.
