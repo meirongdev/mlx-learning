@@ -34,7 +34,7 @@ still claimed M2 Pro had in fact been deleted.
 | `mlx-community__Qwen3.6-35B-A3B-4bit`               | std 4bit     | ~19 GB | 256k    | —       | M2 Pro: **45.89 tok/s** (marginally fastest on M2 Pro). Removed from M5 2026-06-28; **no longer on M2 Pro either (verified 2026-08-22)** |
 | `ornith-ai__Ornith-1.5-35B-A3B-MLX-4bit`            | affine 4bit, gs 64 | ~18.5 GB | 262k | M2 Pro | `qwen3_5_moe`, 256 experts / 8 active. **Fastest decode measured on M2 Pro: 63.33 tok/s @ 512 on omlx 0.6.3rc2 (+7.7% vs the NVFP4 main model), but prefill −3.4%.** Added 2026-08-21. **Text-only** — upstream is a VLM, conversion ships no `visual.*` weights. Declares `mtp_num_hidden_layers: 1` but ships **no `mtp.*` weights**, so it cannot speculate. No `reasoning_parser` configured — it is a thinking model, so `<think>` text lands in `content`. **`enable_thinking: false` does not stop it reasoning** — the template drops the `<think>` block and it reasons in plain prose instead, so budget generously or force the output format in a system prompt |
 | `mlx-community__gemma-4-26b-a4b-it-nvfp4`           | NVFP4        | ~15 GB | 256k    | —       | Non-QAT Gemma 4; removed from M5 2026-06-28 |
-| `mlx-community__gemma-4-26B-A4B-it-qat-nvfp4`       | QAT NVFP4    | ~15 GB | 256k    | **M5**  | **M5's main (chat/VLM) model.** Gemma 4 VLM; runs on omlx (M5 default) and vllm-mlx 0.3.0+ (~30 tok/s @ 512/1024); QAT = better quality at 4-bit. Crashed on vllm-mlx 0.2.9 |
+| `mlx-community__gemma-4-26B-A4B-it-qat-nvfp4`       | QAT NVFP4    | ~15 GB | 256k    | **M5**, M2 Pro | **M5's main (chat/VLM) model**, and **also resident on the M2 Pro** (verified against `models/` 2026-08-22 — 15 GB, not previously recorded here; it is the M2 Pro's only VLM, since the deployed Qwen3.6 build and Ornith are both text-only). Gemma 4 VLM; runs on omlx (M5 default) and vllm-mlx 0.3.0+ (~30 tok/s @ 512/1024); QAT = better quality at 4-bit. Crashed on vllm-mlx 0.2.9 |
 | `mlx-community__Qwen3-Embedding-0.6B-4bit-DWQ`      | DWQ-4bit     | ~0.34 GB | —     | **M5**  | **Embedding** (1024-dim, multilingual). Added 2026-06-28 for testing `/v1/embeddings`. Cross-lingual sanity check passed (en↔zh cosine ~0.72) |
 | `mlx-community__Qwen3-Embedding-4B-4bit-DWQ`        | DWQ-4bit     | ~2.1 GB | —      | M2 Pro  | **Embedding** (2560-dim). Verified 2026-08-01: en↔zh cosine 0.68 |
 | `mlx-community__Qwen3-ASR-1.7B-8bit`                | 8bit         | ~1.9 GB | —      | M2 Pro  | **ASR** (`/v1/audio/transcriptions`). Better multilingual/Chinese than `parakeet-tdt-0.6b-v3`, which is the higher-download English default |
@@ -43,10 +43,10 @@ still claimed M2 Pro had in fact been deleted.
 | `mlx-community__Qwen3-Embedding-8B-4bit-DWQ`        | DWQ-4bit     | ~4.0 GB | —      | M2 Pro  | **Embedding** (4096-dim). Added 2026-08-22. **MMTEB Mean(Task) 70.58 — highest in Qwen's own table**, above the deployed 4B (69.45) and Gemini Embedding (68.37). Verified: en↔zh cosine 0.759, unrelated 0.460 |
 | `mlx-community__Qwen3-VL-Embedding-2B-8bit`         | 8bit         | ~2.5 GB | 32k    | M2 Pro  | **Multimodal embedding** (2048-dim, `qwen3_vl`). Added 2026-08-22. **MMEB-v2 All 73.2 at 2B — beats RzenEmbed-8B (72.9) and GME-7B (59.1).** But **text-only retrieval is a step *down*** (MMTEB 63.87 vs the 4B's 69.45) — this is a *new capability*, not a replacement. Verified: 2048-dim, en↔zh cosine 0.789, unrelated 0.501 |
 | `mlx-community__Qwen3-VL-Reranker-2B-8bit`          | 8bit         | ~2.5 GB | 32k    | M2 Pro  | **Multimodal reranker** (`qwen3_vl`). Added 2026-08-22. **MMEB-v2(Retrieval) Avg 75.1, ViDoRe v3 60.8** — above jina-reranker-m0 (57.8). Verified 1.12 s: correct ordering, 0.651 / 0.535 / 0.107 |
-| `mlx-community__Mega-ASR-8bit`                      | 8bit         | ~2.3 GB | —      | M2 Pro  | **ASR.** Added 2026-08-22. Qwen3-ASR-1.7B with the Mega-ASR robustness LoRA **merged** (`qwen3_asr` — drop-in). Router removed, so it always runs the robust path (`Mega-ASR-bf16` keeps the clean/noisy router). **Robustness advantage not reproduced here — see the ASR comparison below** |
-| `kamilobad__GLM-ASR-Nano-2512-8bit`                 | 8bit         | ~2.3 GB | —      | M2 Pro  | **ASR** (`glmasr`). Added 2026-08-22. Upstream `zai-org` claims the **lowest average error rate (4.10)** among comparable open models. **Third-party MLX conversion** (~10 downloads) — verified it loads and infers. Fastest of the three (0.29–1.35 s) and returns timestamped `segments`, but **worst under degradation — see below** |
-| `mlx-community__Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit` | 8bit       | ~2.9 GB | —      | M2 Pro  | **TTS.** Added 2026-08-22. Same `qwen3_tts` family as CustomVoice but takes a **text description of the voice** instead of a fixed voice name. **Requires `instructions`** — a request with `voice` returns 500. Verified 1.25 s → 24 kHz mono WAV |
-| `mlx-community__chatterbox-multilingual-v3`         | —            | ~2.5 GB | —      | M2 Pro  | **TTS** (`chatterbox`), multilingual. Added 2026-08-22. **Pure zero-shot voice cloning — no built-in voices**: the repo ships no `conds.safetensors`, so **every request needs `ref_audio` (base64, not a path)**. Verified 13.2 s → 24 kHz mono WAV |
+| `mlx-community__Mega-ASR-8bit`                      | 8bit         | ~2.3 GB | —      | —       | **ASR.** Added 2026-08-22. Qwen3-ASR-1.7B with the Mega-ASR robustness LoRA **merged** (`qwen3_asr` — drop-in). Router removed, so it always runs the robust path (`Mega-ASR-bf16` keeps the clean/noisy router). **Robustness advantage not reproduced here — see the ASR comparison below.** **Deleted 2026-08-22** — repetition collapse from ~420 s; row kept so it is not silently retried |
+| `kamilobad__GLM-ASR-Nano-2512-8bit`                 | 8bit         | ~2.3 GB | —      | —       | **ASR** (`glmasr`). Added 2026-08-22. Upstream `zai-org` claims the **lowest average error rate (4.10)** among comparable open models. **Third-party MLX conversion** (~10 downloads) — verified it loads and infers. Fastest of the three (0.29–1.35 s) and returns timestamped `segments`, but **worst under degradation — see below**. **Deleted 2026-08-22** — hard truncation at ~45 s of audio; row kept so it is not silently retried |
+| `mlx-community__Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit` | 8bit       | ~2.9 GB | —      | —       | **TTS.** Added 2026-08-22. Same `qwen3_tts` family as CustomVoice but takes a **text description of the voice** instead of a fixed voice name. **Requires `instructions`** — a request with `voice` returns 500. Verified 1.25 s → 24 kHz mono WAV. **Deleted 2026-08-22** — no caller here sends `instructions`; row kept so it is not silently retried |
+| `mlx-community__chatterbox-multilingual-v3`         | —            | ~2.5 GB | —      | —       | **TTS** (`chatterbox`), multilingual. Added 2026-08-22. **Pure zero-shot voice cloning — no built-in voices**: the repo ships no `conds.safetensors`, so **every request needs `ref_audio` (base64, not a path)**. Verified 13.2 s → 24 kHz mono WAV. **Deleted 2026-08-22** — no caller here sends `ref_audio`; row kept so it is not silently retried. Its 472 MB `S3TokenizerV2` dependency had to be deleted separately, from the HF cache |
 | `z-lab__Qwen3.6-35B-A3B-DFlash`                     | bf16         | ~0.77 GB | —     | — | DFlash speculative drafter. **Benchmarked and rejected — cost 19–29%.** Since deleted; row kept so the option is not silently retried |
 | `mlx-community__gemma-4-26B-A4B-it-qat-assistant-nvfp4` | QAT NVFP4 | ~0.26 GB | —    | **M5 (on disk, MTP off)**; deleted from M2 Pro | Google's official Gemma 4 MTP drafter (`gemma4_assistant`, `block_size=4`). **Rejected on M2 Pro (−12%) but re-tested on M5 2026-08-17: −0.6% general, +21.5% code at 78% acceptance.** Keep on M5 if the workload is code-heavy — enabling it is a one-key change, see serving.md. Already deleted from M2 Pro |
 | `mlx-community__diffusiongemma-26B-A4B-it-4bit`     | std 4bit     | ~15 GB | 256k    | — | **Separate model, not a Gemma 4 version** (see below). **Benchmarked and rejected — 14.3 vs 44.3 tok/s.** Since deleted, so it no longer appears in `/v1/models` — while it was on disk a client could pick it and get 3× slower replies |
@@ -105,15 +105,19 @@ OptiQ note below — omlx cannot load the sidecar its speedup depends on.
 
 ## Small models — which one for what
 
-Four endpoints, eleven models on disk after the 2026-08-22 refresh. Nothing here
+Four endpoints, seven models on disk after the 2026-08-22 cleanup (the refresh
+added seven and the caller-shaped retest removed four — see below). Nothing here
 is a straight upgrade over what it sits next to — each option trades something.
 Scores are the vendors' own unless marked *measured here*.
 
 **The constraint that applies to all of them:** the main model is ~19 GB and the
 process ceiling is 30 GB (hard threshold 28.5 GB). Two or three small models
-resident alongside it is enough to trigger eviction, so every one of these carries
-`ttl_seconds: 900`. Treat "which model" as also meaning "how often will it be
-paged back in".
+resident alongside it is enough to trigger eviction. ⚠️ **The `ttl_seconds: 900`
+this section used to claim for every small model is not in force** — verified
+2026-08-22, `~/.omlx/settings.json`'s `model` block holds only `model_dirs`,
+`model_dir`, `model_fallback` and `hide_helper_models`, with no per-model entries
+anywhere. Treat "which model" as also meaning "how often will it be paged back
+in", and note that nothing currently bounds that.
 
 ### Embedding — `/v1/embeddings`
 
@@ -192,9 +196,11 @@ Full evidence in [ASR: neither challenger beat the incumbent](#asr-neither-chall
   It also **ships its own Python**, which is what forced the `mypy` exclude in
   `pyproject.toml`.
 
-**Pick:** stay on Qwen3-ASR. Use GLM-ASR only where you need timestamps or
-low latency *and* the audio is clean. Retest Mega-ASR if your workload is noisy
-Chinese specifically. For streaming you must leave this family entirely — see
+**Pick: Qwen3-ASR, and it is now the only one on disk.** The retest this section
+called for was run against the real caller's shape and both challengers failed
+categorically at production length — see
+[ASR at production length](#asr-at-production-length-both-challengers-fail-categorically--2026-08-22).
+For streaming you must leave this family entirely — see
 [Streaming ASR is unavailable with the deployed model](#streaming-asr-is-unavailable-with-the-deployed-model).
 
 ### TTS — `/v1/audio/speech`
@@ -223,9 +229,36 @@ Three models, **three incompatible request shapes** — see
   so every request must carry base64 audio (a path returns 400). Slowest of the
   three, and a genuinely different integration, not a drop-in.
 
-**Pick:** CustomVoice for fixed known voices, VoiceDesign when you want a voice
-you can describe but do not have a sample of, chatterbox only when you must match
-a *specific* person's voice from a recording.
+**Pick: CustomVoice, and it is now the only one on disk.** VoiceDesign and
+chatterbox were deleted 2026-08-22 — not on quality, but because **no caller here
+can drive them**: `podcast_creator/nodes.py:273` sends only `text` / `voice` /
+`output_file`, so the `instructions` and `ref_audio` fields those two require are
+never populated. Both also return `{"voices": []}` from `/v1/audio/voices`
+(verified 2026-08-22), while CustomVoice returns its 9 names — that empty list is
+the cheapest way to tell a drivable TTS from an undrivable one. Re-download either
+if a caller ever grows the field.
+
+#### CustomVoice synthesis cost is superlinear in input length
+
+Measured 2026-08-22 on M2 Pro, omlx 0.6.3rc2, idle server, Chinese input:
+
+| Input | Audio out | Synthesis | Ratio |
+|---|---:|---:|---:|
+| 237 chars | 47.4 s | 19.6 s | **2.42× realtime** |
+| 948 chars (4×) | 199.8 s | 249.8 s (12.7×) | **0.80× realtime** |
+
+4× the input costs 12.7× the time — roughly `n^1.8`, and past ~900 characters
+synthesis is **slower than the audio it produces**. This confirms the
+"140–466 s for 800–1000 characters" figure recorded during the refresh as a real
+property, not server contention.
+
+**Consequence for long output: chunk size dominates everything.** Ten minutes of
+Chinese audio is ~2850 characters. Sent as one request that extrapolates to ~30
+minutes of synthesis; sent as ~240-character segments it is ~12 calls totalling
+~4 minutes — a 7–8× difference for identical output. `podcast_creator` already
+synthesises per segment, so keep segments short and never concatenate them into
+one call. (The ~30-minute figure is a two-point power-law extrapolation, not a
+measurement; the two rows above are measured.)
 
 ## Endpoint requirements
 
@@ -282,6 +315,28 @@ Set `model.hide_helper_models: true` in `~/.omlx/settings.json` (omlx defaults
 it to `false`). Otherwise a downloaded speculative-decoding drafter is
 discovered as `type: llm` and **listed in `/v1/models` as a selectable chat
 model** — it will fail if a client picks it.
+
+### omlx also discovers models from the HF hub cache
+
+`~/.omlx/settings.json` points `model_dirs` at this repo's `models/` only, but
+`/v1/models` can still list things that are not there. Discovered 2026-08-22:
+after deleting `chatterbox-multilingual-v3`, `/v1/models` still advertised
+`mlx-community--S3TokenizerV2` — note the `--`, which is HF-cache naming, not this
+repo's `__`. It was 472 MB of real blobs in `~/.cache/huggingface/hub/`, pulled at
+runtime by chatterbox rather than by `make model-download`, and it survived the
+model-directory deletion.
+
+So a deleted model can leave a selectable orphan behind. After removing a model,
+check both locations:
+
+```bash
+du -sh ~/.cache/huggingface/hub/models--*/ | sort -h   # real blobs stand out; metadata stubs are 4.0K
+curl -s localhost:8000/v1/models | python3 -c 'import json,sys;[print(m["id"]) for m in json.load(sys.stdin)["data"]]'
+```
+
+Everything else in that cache on the M2 Pro is a 4.0 KB metadata stub written by
+`make model-download`; only a model's own runtime dependencies land there as
+weights.
 
 ## Context length
 
@@ -345,8 +400,8 @@ fail it outright.
 |---|---|---|---|
 | Text embedding | `Qwen3-Embedding-4B-4bit-DWQ` (MMTEB 69.45) | `Qwen3-Embedding-8B-4bit-DWQ` (**70.58**) | Real but small upgrade (+1.13). Both kept |
 | Multimodal retrieval | — | `Qwen3-VL-Embedding-2B-8bit` (MMEB-v2 **73.2**) + `Qwen3-VL-Reranker-2B-8bit` (**75.1**) | New capability. **Text retrieval is worse** (63.87 vs 69.45) — do not repoint text search at it |
-| ASR | `Qwen3-ASR-1.7B-8bit` | `Mega-ASR-8bit`, `GLM-ASR-Nano-2512-8bit` | **No switch** — see the ASR comparison below |
-| TTS | `Qwen3-TTS-…-CustomVoice-8bit` | `Qwen3-TTS-…-VoiceDesign-8bit`, `chatterbox-multilingual-v3` | Additive: text-described voices, and zero-shot cloning |
+| ASR | `Qwen3-ASR-1.7B-8bit` | `Mega-ASR-8bit`, `GLM-ASR-Nano-2512-8bit` | **No switch, and both deleted the same day** — they fail categorically at the caller's 600 s chunk length. See the two ASR sections below |
+| TTS | `Qwen3-TTS-…-CustomVoice-8bit` | `Qwen3-TTS-…-VoiceDesign-8bit`, `chatterbox-multilingual-v3` | **Both deleted the same day** — additive in principle, but no caller here sends `instructions` or `ref_audio`, so neither could ever be driven |
 
 Rejected on omlx compatibility, not on score:
 
@@ -414,6 +469,50 @@ discriminate these models.
 was the only one of the three that degraded gracefully in both languages rather
 than hallucinating. The two challengers are kept on disk for a workload-specific
 retest — Mega-ASR is worth another look on genuinely noisy *Chinese* audio.
+
+### ASR at production length: both challengers fail categorically — 2026-08-22
+
+The retest the section above asked for, run against the real caller's shape rather
+than synthetic clips. `content_core/processors/media/audio.py:146` splits audio
+into **10-minute chunks**, converts to **mp3**, sends **no `language` hint**, and
+runs chunks concurrently — so the unit under test is a single ~600 s mp3, not a
+sentence. `10 * 60` is hardcoded there, so "use smaller chunks" is not available
+without changing that caller.
+
+| Sample | `Qwen3-ASR` *(deployed)* | `Mega-ASR` | `GLM-ASR-Nano` |
+|---|---|---|---|
+| 103 s en + noise / low-bitrate / 1.2× | 2.5% / 3.0% / 3.0% | 1.7% / 2.1% / 1.3% | 57.2% (identical in all three) |
+| 85 s zh with technical terms | 2.5% | 3.2% | 40.5% |
+| **571 s mp3 (production shape)** | **4.2%, 99% coverage, 42–45 s, stable over 3 runs** | ❌ **WER 470%**, 7475 tokens for a 1448-token reference, 172.8 s | ❌ **WER 92%**, 8% coverage |
+
+- **GLM-ASR-Nano truncates hard at ~45 s of audio.** Output length is independent
+  of input length — 102 tokens from the 103 s sample, 112 tokens from the 571 s
+  one. A 10-minute lecture returns a fluent opening and silently drops 92% of it.
+- **Mega-ASR collapses into repetition on long audio.** Fine to ~300 s, broken from
+  420 s, with one sentence repeating to the end. It genuinely is 0.8–1.7 points
+  better than the incumbent on *degraded English* — but only at lengths this
+  deployment never sends, and it is **worse on Chinese (3.2% vs 2.5%)**, which was
+  the axis Qwen3-ASR was chosen on in the first place. That closes the
+  "retest on noisy Chinese" option this section had left open.
+
+**The 600 s boundary is verified, not extrapolated.** The evidence above stops at
+571 s while the caller can emit a full 600 s chunk, so a 609.6 s mp3 was
+transcribed under the same production shape (M2 Pro, omlx 0.6.3rc2, warmed):
+output/reference word ratio **1.03**, tail aligned to the true end of the audio,
+most-repeated 8-gram appearing **twice** — no truncation, no collapse — in 54.9 s
+wall clock (~11× realtime, matching the 42–45 s at 571 s). Its WER reads 9.8–11%,
+but that number is **not comparable to the 4.2% above**: the script was this
+repo's own documentation, so version strings and jargon dominate the errors
+(`omlx` → "arm looks", `0.6.3rc2` → "0 6 3 rc2"). The result of that run is the
+coverage, not the WER.
+
+⚠️ **The short-sample rankings above are single samples per cell** and carry the
+same caveat as the smoke test in the previous section — 1.7% vs 2.5% at 103 s is
+not a WER measurement. The decision rests entirely on the categorical failures at
+production length, where no statistics are needed.
+
+**Outcome: no switch, and both challengers deleted** (4.6 GB). They are kept as
+catalog rows so the option is not silently retried.
 
 ### Streaming ASR is unavailable with the deployed model
 
